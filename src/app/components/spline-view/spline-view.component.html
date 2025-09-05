@@ -1,23 +1,159 @@
-<div class="controls">
-  <div class="row">
-    <label>Scene URL <input type="text" [ngModel]="sceneUrl()" (ngModelChange)="sceneUrl.set($event)" /></label>
-    <button (click)="load()">Load Scene</button>
-    <label>Nodes <input type="number" min="1" max="20" [ngModel]="numNodes()" (ngModelChange)="onNumNodesChange($event)" /></label>
-    <label>Attributes <input type="number" min="3" max="10" [ngModel]="numAttributes()" (ngModelChange)="onNumAttributesChange($event)" /></label>
+<!-- Radial UI Elements -->
+<div class="radial-ui">
+  <!-- Top Left: Programmable Biology -->
+  <div class="radial-element" style="top: 15%; left: 10%;" (click)="selectNode('biology')">
+    <div class="label-small">PROGRAMMABLE</div>
+    <div class="label-large">BIOLOGY</div>
+    <div class="icon">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+      </svg>
+    </div>
   </div>
-  <div class="row">
-    <label>Attraction k <input type="number" [ngModel]="attractionK()" (ngModelChange)="attractionK.set($event)" /></label>
-    <label>Repulsion k <input type="number" [ngModel]="repulsionK()" (ngModelChange)="repulsionK.set($event)" /></label>
-    <label>Damping <input type="number" step="0.01" [ngModel]="damping()" (ngModelChange)="damping.set($event)" /></label>
+
+  <!-- Top Right: Scenius Web3 -->
+  <div class="radial-element" style="top: 15%; right: 10%;" (click)="selectNode('web3')">
+    <div class="label-small">SCENIUS</div>
+    <div class="label-large">WEB3</div>
+    <div class="icon">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+      </svg>
+    </div>
   </div>
-  <div class="row">
-    <label>Central Prefs (first 3 map to XYZ)
-      <input type="text" [ngModel]="centralPreferences().join(',')" (ngModelChange)="onCentralPrefsChange($event)" />
-    </label>
+
+  <!-- Mid Left: Breakthrough Computation -->
+  <div class="radial-element" style="top: 50%; left: 5%;" (click)="selectNode('computation')">
+    <div class="label-small">BREAKTHROUGH</div>
+    <div class="label-large">COMPUTATION & ENGINEERING</div>
+    <div class="icon">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.94-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+      </svg>
+    </div>
+  </div>
+
+  <!-- Mid Right: About Blueyard -->
+  <div class="radial-element" style="top: 50%; right: 5%;" (click)="selectNode('about')">
+    <div class="label-small">ABOUT</div>
+    <div class="label-large">BLUEYARD BY</div>
+    <div class="icon">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+      </svg>
+    </div>
+  </div>
+
+  <!-- Bottom Center: Liberated Knowledge -->
+  <div class="radial-element" style="bottom: 20%; left: 50%; transform: translateX(-50%);" (click)="selectNode('knowledge')">
+    <div class="label-small">LIBERATED</div>
+    <div class="label-large">KNOWLEDGE & DATA</div>
+    <div class="icon">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.94-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+      </svg>
+    </div>
   </div>
 </div>
 
-<div style="position: relative; width: 100%; height: 70vh; border-radius: 12px; background: linear-gradient(180deg,#1A1A1A,#2A2A2A); overflow:hidden;">
-  <canvas #splineCanvas style="position:absolute; inset:0; width:100%; height:100%; display:block;"></canvas>
-  <canvas #threeCanvas style="position:absolute; inset:0; width:100%; height:100%; display:block;"></canvas>
+<!-- Audio Control -->
+<div class="audio-control" (click)="toggleAudio()">
+  <svg class="speaker-icon" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+  </svg>
+  <span>AUDIO</span>
+</div>
+
+<!-- Controls Panel -->
+<div class="controls-panel glass-panel">
+  <div class="controls-header">
+    <h3>Galaxy Controls</h3>
+    <button class="neomorphic-btn" (click)="toggleControls()">
+      {{ showControls() ? 'Hide' : 'Show' }} Controls
+    </button>
+  </div>
+  
+  <div class="controls-content" [class.hidden]="!showControls()">
+    <div class="control-group">
+      <label>Number of Nodes</label>
+      <input type="range" min="3" max="20" [ngModel]="numNodes()" (ngModelChange)="onNumNodesChange($event)" class="slider">
+      <span class="value">{{ numNodes() }}</span>
+    </div>
+    
+    <div class="control-group">
+      <label>Number of Attributes</label>
+      <input type="range" min="3" max="10" [ngModel]="numAttributes()" (ngModelChange)="onNumAttributesChange($event)" class="slider">
+      <span class="value">{{ numAttributes() }}</span>
+    </div>
+    
+    <div class="control-group">
+      <label>Attraction Force</label>
+      <input type="range" min="0" max="100" [ngModel]="attractionK()" (ngModelChange)="attractionK.set($event)" class="slider">
+      <span class="value">{{ attractionK() }}</span>
+    </div>
+    
+    <div class="control-group">
+      <label>Repulsion Force</label>
+      <input type="range" min="0" max="100" [ngModel]="repulsionK()" (ngModelChange)="repulsionK.set($event)" class="slider">
+      <span class="value">{{ repulsionK() }}</span>
+    </div>
+    
+    <div class="control-group">
+      <label>Damping</label>
+      <input type="range" min="0.8" max="1" step="0.01" [ngModel]="damping()" (ngModelChange)="damping.set($event)" class="slider">
+      <span class="value">{{ damping() }}</span>
+    </div>
+    
+    <div class="control-group">
+      <label>Central Node Selection</label>
+      <select class="neomorphic-select" (change)="selectCentralNode($any($event.target).value)">
+        <option *ngFor="let node of nodeSpheres; let i = index" [value]="'node-' + i" [selected]="selectedCentralNodeId() === 'node-' + i">
+          Node {{ i + 1 }}
+        </option>
+      </select>
+    </div>
+    
+    <div class="control-group">
+      <label>Central Preferences (comma-separated)</label>
+      <input type="text" [ngModel]="centralPreferences().join(',')" (ngModelChange)="onCentralPrefsChange($event)" class="text-input">
+    </div>
+  </div>
+</div>
+
+<!-- Attribute Editor Panel -->
+<div class="attribute-editor glass-panel" *ngIf="editingNodeId()">
+  <div class="editor-header">
+    <h3>Edit Node {{ editingNodeId()?.replace('node-', '') }} Attributes</h3>
+    <button class="neomorphic-btn close-btn" (click)="stopEditingNode()">×</button>
+  </div>
+  
+  <div class="editor-content">
+    <div class="attribute-list">
+      <div class="attribute-item" *ngFor="let attr of getNodeAttributes(editingNodeId()!); let i = index">
+        <label>Attribute {{ i + 1 }}</label>
+        <div class="attribute-controls">
+          <input type="range" min="0" max="100" 
+                 [ngModel]="attr" 
+                 (ngModelChange)="updateNodeAttribute(editingNodeId()!, i, $event)"
+                 class="slider">
+          <input type="number" min="0" max="100" 
+                 [ngModel]="attr" 
+                 (ngModelChange)="updateNodeAttribute(editingNodeId()!, i, $event)"
+                 class="number-input">
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Tooltip -->
+<div class="tooltip" [style.display]="tooltip().visible ? 'block' : 'none'" 
+     [style.left.px]="tooltip().x" [style.top.px]="tooltip().y">
+  <div class="tooltip-title">{{ tooltip().title }}</div>
+  <div class="tooltip-content">{{ tooltip().content }}</div>
+</div>
+
+<!-- 3D Canvas Container -->
+<div class="canvas-container">
+  <canvas #threeCanvas class="three-canvas"></canvas>
 </div>

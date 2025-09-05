@@ -1,0 +1,11 @@
+<!-- 3D Canvas Container -->
+<div class="canvas-container">
+  <canvas #threeCanvas class="three-canvas"></canvas>
+</div>
+
+<!-- Tooltip -->
+<div class="tooltip" [style.display]="tooltip().visible ? 'block' : 'none'" 
+     [style.left.px]="tooltip().x" [style.top.px]="tooltip().y">
+  <div class="tooltip-title">{{ tooltip().title }}</div>
+  <div class="tooltip-content">{{ tooltip().content }}</div>
+</div>
