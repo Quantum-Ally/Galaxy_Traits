@@ -1,0 +1,23 @@
+<div class="controls">
+  <div class="row">
+    <label>Scene URL <input type="text" [ngModel]="sceneUrl()" (ngModelChange)="sceneUrl.set($event)" /></label>
+    <button (click)="load()">Load Scene</button>
+    <label>Nodes <input type="number" min="1" max="20" [ngModel]="numNodes()" (ngModelChange)="onNumNodesChange($event)" /></label>
+    <label>Attributes <input type="number" min="3" max="10" [ngModel]="numAttributes()" (ngModelChange)="onNumAttributesChange($event)" /></label>
+  </div>
+  <div class="row">
+    <label>Attraction k <input type="number" [ngModel]="attractionK()" (ngModelChange)="attractionK.set($event)" /></label>
+    <label>Repulsion k <input type="number" [ngModel]="repulsionK()" (ngModelChange)="repulsionK.set($event)" /></label>
+    <label>Damping <input type="number" step="0.01" [ngModel]="damping()" (ngModelChange)="damping.set($event)" /></label>
+  </div>
+  <div class="row">
+    <label>Central Prefs (first 3 map to XYZ)
+      <input type="text" [ngModel]="centralPreferences().join(',')" (ngModelChange)="onCentralPrefsChange($event)" />
+    </label>
+  </div>
+</div>
+
+<div style="position: relative; width: 100%; height: 70vh; border-radius: 12px; background: linear-gradient(180deg,#1A1A1A,#2A2A2A); overflow:hidden;">
+  <canvas #splineCanvas style="position:absolute; inset:0; width:100%; height:100%; display:block;"></canvas>
+  <canvas #threeCanvas style="position:absolute; inset:0; width:100%; height:100%; display:block;"></canvas>
+</div>
