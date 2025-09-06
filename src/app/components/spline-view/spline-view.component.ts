@@ -24,7 +24,7 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
   attractionK = signal<number>(100);
   repulsionK = signal<number>(20);
   damping = signal<number>(0.98);
-  centralPreferences = signal<number[]>([50, 50, 50]);
+  centralPreferences = signal<number[]>([75, 25, 60]); // More diverse default preferences
 
   // UI State
   showControls = signal<boolean>(true);
@@ -438,13 +438,19 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
         };
       } else {
         // Convert all other nodes to outer nodes - preserve their original names
+        const isOldCentral = node.isCentral;
         return {
           ...node,
           isCentral: false,
           color: '#FF3366', // Pink-red for outer nodes
           radius: 0.6 + Math.random() * 0.4, // Random radius for outer nodes
-          // Keep their current positions but reset velocities
-          velocity: { x: 0, y: 0, z: 0 }
+          // If this was the old central node, give it a new random position
+          position: isOldCentral ? {
+            x: (Math.random() - 0.5) * 100,
+            y: (Math.random() - 0.5) * 20,
+            z: (Math.random() - 0.5) * 100
+          } : node.position, // Keep current position for other nodes
+          velocity: { x: 0, y: 0, z: 0 } // Reset velocities
         };
       }
     });
@@ -549,13 +555,59 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
     }, 5000);
   }
 
+  // Debug method to force immediate movement to equilibrium
+  forceMoveToEquilibrium(): void {
+    console.log('Forcing immediate movement to equilibrium positions...');
+    if (this.equilibriumPositions.length === 0) {
+      console.log('No equilibrium positions calculated yet');
+      return;
+    }
+    
+    for (let i = 0; i < this.nodeSpheres.length; i++) {
+      const mesh = this.nodeSpheres[i];
+      const nodeId = (mesh as any).nodeId;
+      const node = this.nodes.find(n => n.id === nodeId);
+      const targetPosition = this.equilibriumPositions[i];
+      
+      if (targetPosition && node) {
+        console.log(`Moving node ${nodeId} from`, mesh.position, 'to', targetPosition);
+        mesh.position.copy(targetPosition);
+        
+        // Update service
+        this.nodeService.updateNodePosition(nodeId, {
+          x: mesh.position.x,
+          y: mesh.position.y,
+          z: mesh.position.z
+        });
+      }
+    }
+    console.log('Forced movement complete');
+  }
+
+  // Generate diverse test configuration
+  generateDiverseTest(): void {
+    console.log('Generating diverse test configuration...');
+    const diverseConfig = MockDataService.generateDiverseTestConfig();
+    
+    // Update central preferences
+    this.centralPreferences.set(diverseConfig.centralPreferences);
+    
+    // Reset nodes with new configuration
+    this.resetNodes();
+    
+    // Clear equilibrium positions to force recalculation
+    this.equilibriumPositions = [];
+    
+    console.log('Diverse test configuration generated:', diverseConfig.centralPreferences);
+  }
+
   resetToDefaults(): void {
-    this.numNodes.set(10);
+    this.numNodes.set(8);
     this.numAttributes.set(3);
     this.attractionK.set(100);
     this.repulsionK.set(20);
     this.damping.set(0.98);
-    this.centralPreferences.set([50, 50, 50]);
+    this.centralPreferences.set([75, 25, 60]); // More diverse default preferences
     this.resetNodes();
   }
 
@@ -637,8 +689,8 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
       const nodeId = (mesh as any).nodeId;
       const node = this.nodes.find(n => n.id === nodeId);
       
-      // Skip central node and currently dragged nodes
-      if (node?.isCentral || (this.dragging && this.dragged === mesh)) continue;
+      // Skip only currently dragged nodes, but allow central node to move to new position
+      if (this.dragging && this.dragged === mesh) continue;
       
       // Return to equilibrium position with smooth interpolation
       const targetPosition = this.equilibriumPositions[i];
@@ -652,7 +704,13 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
           const direction = targetPosition.clone().sub(currentPos).normalize();
           const moveDistance = Math.min(distance, returnSpeed * dt);
           
+          const oldPos = mesh.position.clone();
           mesh.position.add(direction.multiplyScalar(moveDistance));
+          
+          // Debug logging for movement
+          if (Math.random() < 0.01) { // Log occasionally to avoid spam
+            console.log(`Node ${nodeId} moving from`, oldPos, 'towards', targetPosition, 'distance:', distance);
+          }
           
           // Update service with new position
           this.nodeService.updateNodePosition(nodeId, {
@@ -793,7 +851,7 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
         this.velocities[i].set(dampedVelocity.x, dampedVelocity.y, dampedVelocity.z);
       }
 
-      // Update positions
+      // Update positions (only for non-central nodes)
       for (let i = 0; i < this.nodeSpheres.length; i++) {
         const mesh = this.nodeSpheres[i];
         const nodeId = (mesh as any).nodeId;
@@ -804,6 +862,17 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
         // Update position
         mesh.position.addScaledVector(this.velocities[i], dt);
       }
+      
+      // Ensure central node stays at center
+      for (let i = 0; i < this.nodeSpheres.length; i++) {
+        const mesh = this.nodeSpheres[i];
+        const nodeId = (mesh as any).nodeId;
+        const node = this.nodes.find(n => n.id === nodeId);
+        
+        if (node && node.isCentral) {
+          mesh.position.set(0, 0, 0);
+        }
+      }
     }
     
     // Store final positions as equilibrium positions
@@ -812,11 +881,14 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
       const nodeId = (mesh as any).nodeId;
       const node = this.nodes.find(n => n.id === nodeId);
       
-      if (!node || node.isCentral) {
-        this.equilibriumPositions[i] = mesh.position.clone();
-      } else {
-        // For central node, use its current position
-        this.equilibriumPositions[i] = mesh.position.clone();
+      if (node) {
+        if (node.isCentral) {
+          // Central node should always be at center
+          this.equilibriumPositions[i] = new THREE.Vector3(0, 0, 0);
+        } else {
+          // Outer nodes use their calculated positions
+          this.equilibriumPositions[i] = mesh.position.clone();
+        }
       }
     }
     
@@ -834,6 +906,11 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
     
     this.isCalculatingEquilibrium = false;
     console.log('Equilibrium positions calculated!');
+    console.log('Equilibrium positions:', this.equilibriumPositions.map((pos, i) => ({
+      index: i,
+      position: pos ? { x: pos.x, y: pos.y, z: pos.z } : 'null',
+      nodeId: this.nodeSpheres[i] ? (this.nodeSpheres[i] as any).nodeId : 'unknown'
+    })));
   }
 
   private animateParticles(dt: number): void {
@@ -926,11 +1003,13 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
         let tooltipContent = `Compatibility: ${(compat * 100).toFixed(1)}%\n\n`;
         tooltipContent += `Attributes:\n`;
         
-        // Show attributes with names
+        // Show attributes with names and visual indicators
         const attrNames = this.attributeNames();
         for (let i = 0; i < node.attributes.length; i++) {
           const name = attrNames[i] || `Attr ${i + 1}`;
-          tooltipContent += `${name}: ${node.attributes[i]}\n`;
+          const value = node.attributes[i];
+          const bar = '█'.repeat(Math.floor(value / 10)) + '░'.repeat(10 - Math.floor(value / 10));
+          tooltipContent += `${name}: ${value} [${bar}]\n`;
         }
         
         tooltipContent += `\nClick to drag\n`;

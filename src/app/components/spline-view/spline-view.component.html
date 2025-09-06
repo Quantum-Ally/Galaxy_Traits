@@ -97,6 +97,14 @@
       <label>Central Preferences (comma-separated)</label>
       <input type="text" [ngModel]="centralPreferences().join(',')" (ngModelChange)="onCentralPrefsChange($event)" class="text-input">
     </div>
+    
+    <div class="control-group">
+      <button class="neomorphic-btn" (click)="forceMoveToEquilibrium()">Force Move to Equilibrium</button>
+    </div>
+    
+    <div class="control-group">
+      <button class="neomorphic-btn" (click)="generateDiverseTest()">Generate Diverse Test</button>
+    </div>
   </div>
 </div>
 

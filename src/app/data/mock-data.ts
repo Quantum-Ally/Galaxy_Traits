@@ -13,7 +13,7 @@ export class MockDataService {
   private static readonly DEFAULT_NODE_CONFIG: NodeConfig = {
     numNodes: 8, // Reduced from 10 to 8 for better performance
     numAttributes: 3,
-    centralPreferences: [50, 50, 50],
+    centralPreferences: [75, 25, 60], // More diverse central preferences
     selectedCentralNodeId: 'central'
   };
 
@@ -49,6 +49,27 @@ export class MockDataService {
       color: '#FF80FF'
     }
   ];
+
+  // Generate diverse test configurations
+  static generateDiverseTestConfig(): NodeConfig {
+    const diversePreferences = [
+      [90, 10, 80], // High, Low, High
+      [20, 85, 15], // Low, High, Low  
+      [50, 50, 50], // Balanced
+      [95, 5, 95],  // Very High, Very Low, Very High
+      [10, 90, 20], // Very Low, Very High, Low
+      [70, 30, 60], // High-Medium, Low-Medium, High-Medium
+    ];
+    
+    const randomPrefs = diversePreferences[Math.floor(Math.random() * diversePreferences.length)];
+    
+    return {
+      numNodes: 8,
+      numAttributes: 3,
+      centralPreferences: randomPrefs,
+      selectedCentralNodeId: 'central'
+    };
+  }
 
   static getPhysicsConfig(): Observable<PhysicsConfig> {
     return of({ ...this.DEFAULT_PHYSICS_CONFIG }).pipe(delay(1000));
@@ -87,10 +108,28 @@ export class MockDataService {
       
       const attributes: number[] = [];
       for (let j = 0; j < numAttributes; j++) {
-        // Create more realistic attribute distributions
-        const baseValue = 30 + Math.random() * 40; // 30-70 range
-        const variation = (Math.random() - 0.5) * 20; // ±10 variation
-        attributes.push(Math.max(0, Math.min(100, Math.floor(baseValue + variation))));
+        // Create more diverse attribute distributions for better variety
+        const distributionType = Math.random();
+        let value: number;
+        
+        if (distributionType < 0.2) {
+          // 20% chance: Low values (0-30)
+          value = Math.random() * 30;
+        } else if (distributionType < 0.4) {
+          // 20% chance: High values (70-100)
+          value = 70 + Math.random() * 30;
+        } else if (distributionType < 0.6) {
+          // 20% chance: Medium-low values (30-50)
+          value = 30 + Math.random() * 20;
+        } else if (distributionType < 0.8) {
+          // 20% chance: Medium-high values (50-70)
+          value = 50 + Math.random() * 20;
+        } else {
+          // 20% chance: Extreme values (very low or very high)
+          value = Math.random() < 0.5 ? Math.random() * 15 : 85 + Math.random() * 15;
+        }
+        
+        attributes.push(Math.max(0, Math.min(100, Math.floor(value))));
       }
 
       // Calculate initial compatibility with central node
