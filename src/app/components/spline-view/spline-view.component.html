@@ -98,6 +98,88 @@
       <input type="text" [ngModel]="centralPreferences().join(',')" (ngModelChange)="onCentralPrefsChange($event)" class="text-input">
     </div>
     
+    <!-- Attribute Management Section -->
+    <div class="control-group attribute-management">
+      <label>Attribute Management</label>
+      
+      <!-- Node Selection Dropdown -->
+      <div class="dropdown-group">
+        <label>Select Node</label>
+        <select 
+          class="neomorphic-select" 
+          [ngModel]="selectedNodeForAttributes()" 
+          (ngModelChange)="onNodeSelectionChange($event)">
+          <option value="">Choose a node...</option>
+          <option *ngFor="let node of getAvailableNodes()" [value]="node.id">
+            {{ node.name }} {{ node.isCentral ? '(Central)' : '' }}
+          </option>
+        </select>
+      </div>
+      
+      <!-- Attribute Selection Dropdown (only show when node is selected) -->
+      <div class="dropdown-group" *ngIf="selectedNodeForAttributes()">
+        <label>Select Attribute</label>
+        <select 
+          class="neomorphic-select" 
+          [ngModel]="selectedAttributeForEdit()" 
+          (ngModelChange)="onAttributeSelectionChange($event)">
+          <option value="-1">Choose an attribute...</option>
+          <option *ngFor="let attrName of getAvailableAttributes(); let i = index" [value]="i">
+            {{ attrName }}
+          </option>
+        </select>
+      </div>
+      
+      <!-- Single Attribute Editor (only show when both node and attribute are selected) -->
+      <div class="single-attribute-editor" *ngIf="selectedNodeForAttributes() && selectedAttributeForEdit() !== -1">
+        <div class="editor-header">
+          <h4>Edit {{ getSelectedNodeName() }} - {{ getSelectedAttributeName() }}</h4>
+        </div>
+        
+        <div class="editor-content">
+          <div class="attribute-item">
+            <label>{{ getSelectedAttributeName() }}</label>
+            <div class="attribute-controls">
+              <input type="range" min="0" max="100" 
+                     [ngModel]="getSelectedNodeAttributeValue()" 
+                     (ngModelChange)="updateNodeAttribute(selectedNodeForAttributes()!, selectedAttributeForEdit()!, $event)"
+                     class="slider">
+              <input type="number" min="0" max="100" 
+                     [ngModel]="getSelectedNodeAttributeValue()" 
+                     (ngModelChange)="updateNodeAttribute(selectedNodeForAttributes()!, selectedAttributeForEdit()!, $event)"
+                     class="number-input">
+            </div>
+            <div class="current-value-display">
+              Current: {{ getSelectedNodeAttributeValue() }}%
+            </div>
+          </div>
+          
+          <div class="editor-actions">
+            <button class="neomorphic-btn" (click)="resetSelectedAttributeToDefault()">Reset to Default</button>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Attribute Management Actions -->
+      <div class="attribute-actions">
+        <button class="neomorphic-btn" (click)="addAttribute()">+ Add Attribute</button>
+        <button 
+          class="neomorphic-btn small" 
+          (click)="renameAttribute(selectedAttributeForEdit())" 
+          [disabled]="selectedAttributeForEdit() === -1"
+          title="Rename selected attribute">
+          ✏️ Rename
+        </button>
+        <button 
+          class="neomorphic-btn small danger" 
+          (click)="removeAttribute(selectedAttributeForEdit())" 
+          [disabled]="selectedAttributeForEdit() === -1"
+          title="Remove selected attribute">
+          🗑️ Remove
+        </button>
+      </div>
+    </div>
+    
     <div class="control-group">
       <button class="neomorphic-btn" (click)="forceMoveToEquilibrium()">Force Move to Equilibrium</button>
     </div>
@@ -108,34 +190,6 @@
   </div>
 </div>
 
-<!-- Attribute Editor Panel -->
-<div class="attribute-editor glass-panel" *ngIf="editingNodeId()">
-  <div class="editor-header">
-    <h3>Edit {{ editingNodeId() }} Attributes</h3>
-    <button class="neomorphic-btn close-btn" (click)="stopEditingNode()">×</button>
-  </div>
-  
-  <div class="editor-content">
-    <div class="attribute-list">
-      <div class="attribute-item" *ngFor="let attr of getNodeAttributes(editingNodeId()!); let i = index">
-        <label>{{ attributeNames()[i] || 'Attribute ' + (i + 1) }}</label>
-        <div class="attribute-controls">
-          <input type="range" min="0" max="100" 
-                 [ngModel]="attr" 
-                 (ngModelChange)="updateNodeAttribute(editingNodeId()!, i, $event)"
-                 class="slider">
-          <input type="number" min="0" max="100" 
-                 [ngModel]="attr" 
-                 (ngModelChange)="updateNodeAttribute(editingNodeId()!, i, $event)"
-                 class="number-input">
-        </div>
-      </div>
-    </div>
-    <div class="editor-actions">
-      <button class="neomorphic-btn" (click)="resetToDefaults()">Reset to Defaults</button>
-    </div>
-  </div>
-</div>
 
 <!-- Tooltip -->
 <div class="tooltip" [style.display]="tooltip().visible ? 'block' : 'none'" 

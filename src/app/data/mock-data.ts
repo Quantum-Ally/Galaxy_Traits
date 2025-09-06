@@ -87,11 +87,15 @@ export class MockDataService {
     const nodes: Node[] = [];
     const { numNodes, numAttributes, centralPreferences } = config;
 
+    // Generate default attribute names
+    const defaultAttributeNames = this.getAttributeNames(numAttributes);
+
     // Create central node as "sphere" (purple)
     const centralNode: Node = {
       id: 'sphere',
       name: 'Central Sphere',
       attributes: [...centralPreferences],
+      attributeNames: [...defaultAttributeNames],
       position: { x: 0, y: 0, z: 0 },
       velocity: { x: 0, y: 0, z: 0 },
       radius: 2,
@@ -139,6 +143,7 @@ export class MockDataService {
         id: `sphere-clone-${i}`,
         name: `Sphere Clone ${i + 1}`,
         attributes,
+        attributeNames: [...defaultAttributeNames],
         position: {
           x: Math.cos(angle) * orbitRadius,
           y: (Math.random() - 0.5) * 10,

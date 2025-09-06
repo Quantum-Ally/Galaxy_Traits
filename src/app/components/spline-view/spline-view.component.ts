@@ -39,9 +39,11 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
 
   // Node management
   selectedCentralNodeId = signal<string>('central');
-  editingNodeId = signal<string | null>(null);
-  editingAttributeIndex = signal<number>(-1);
   attributeNames = signal<string[]>(['Intelligence', 'Creativity', 'Empathy']);
+  
+  // Attribute management dropdowns
+  selectedNodeForAttributes = signal<string>('');
+  selectedAttributeForEdit = signal<number>(-1);
 
   // Performance monitoring
   fps = signal<number>(60);
@@ -119,8 +121,8 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
       this.selectedCentralNodeId.set(config.selectedCentralNodeId);
     });
 
-    // Load attribute names
-    this.attributeNames.set(MockDataService.getAttributeNames(this.numAttributes()));
+    // Load attribute names from service (will be updated when nodes are generated)
+    this.updateAttributeNamesFromService();
   }
 
   private setupSubscriptions(): void {
@@ -133,6 +135,7 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
     this.nodeService.nodes$.subscribe(nodes => {
       this.nodes = nodes;
       this.updateThreeJSFromNodes();
+      this.updateAttributeNamesFromService();
     });
 
     // Subscribe to central node updates
@@ -322,7 +325,12 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
   onNumAttributesChange(value: number): void {
     const len = Math.max(3, Math.min(10, Number(value) || 3));
     this.numAttributes.set(len);
-    this.centralPreferences.set(Array.from({ length: len }, () => 50));
+    
+    // Update central preferences to match new attribute count
+    const currentPrefs = this.centralPreferences();
+    const newPrefs = Array.from({ length: len }, (_, i) => currentPrefs[i] || 50);
+    this.centralPreferences.set(newPrefs);
+    
     this.resetNodes();
     // Clear equilibrium positions to trigger recalculation
     this.equilibriumPositions = [];
@@ -340,7 +348,7 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
     if (parts.length === 0) return;
     this.centralPreferences.set(parts);
     // Clear equilibrium positions to trigger recalculation with new preferences
-    this.equilibriumPositions = [];
+    // Continuous physics will automatically respond to changes
   }
 
   onCentralNodeChange(nodeId: string): void {
@@ -392,7 +400,7 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
     this.isCalculatingEquilibrium = false;
     
     // Clear equilibrium positions to force recalculation
-    this.equilibriumPositions = [];
+    // Continuous physics will automatically respond to changes
     
     // Reset velocities
     for (let i = 0; i < this.velocities.length; i++) {
@@ -421,7 +429,7 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
     this.isCalculatingEquilibrium = false;
     
     // Clear existing equilibrium positions
-    this.equilibriumPositions = [];
+    // Continuous physics will automatically respond to changes
     
     // Create completely new node array with proper central node transition
     const updatedNodes = this.nodes.map(node => {
@@ -468,16 +476,11 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
     // Reset the entire simulation
     this.resetSimulation();
     
-    // Force equilibrium calculation after a short delay to ensure Three.js is updated
+    // Recalculate equilibrium positions for new central node
     setTimeout(() => {
-      console.log('Triggering equilibrium calculation after central node change...');
-      this.centralNodeChangeInProgress = false; // Hide central node change indicator
+      console.log('Central node changed - recalculating equilibrium positions...');
       this.equilibriumPositions = []; // Clear to force recalculation
-      
-      // Force a physics step to trigger equilibrium calculation
-      if (this.centralNode && this.nodeSpheres.length > 0) {
-        this.stepPhysics(0.016);
-      }
+      this.centralNodeChangeInProgress = false; // Hide central node change indicator
     }, 100);
     
     console.log('Central node changed, simulation reset, will recalculate equilibrium positions...');
@@ -504,30 +507,8 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
-  startEditingNode(nodeId: string, attributeIndex: number): void {
-    this.editingNodeId.set(nodeId);
-    this.editingAttributeIndex.set(attributeIndex);
-  }
-
   updateNodeAttribute(nodeId: string, attributeIndex: number, value: number): void {
-    const node = this.nodes.find(n => n.id === nodeId);
-    if (node) {
-      const newAttributes = [...node.attributes];
-      newAttributes[attributeIndex] = Math.max(0, Math.min(100, value));
-      
-      this.nodeService.updateNodeAttributes(nodeId, newAttributes);
-      
-      // If this is the central node, update preferences too
-      if (nodeId === this.selectedCentralNodeId()) {
-        this.centralPreferences.set([...newAttributes]);
-        this.nodeService.updateAllCompatibilities(newAttributes);
-      }
-    }
-  }
-
-  stopEditingNode(): void {
-    this.editingNodeId.set(null);
-    this.editingAttributeIndex.set(-1);
+    this.updateNodeAttributeValue(nodeId, attributeIndex, value);
   }
 
   getNodeAttributes(nodeId: string): number[] {
@@ -535,8 +516,315 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
     return node ? node.attributes : [];
   }
 
+  getNodeAttributeNames(): string[] {
+    return this.nodeService.getAttributeNames();
+  }
+
+  getCurrentAttributeValues(): number[] {
+    // Return the central preferences which drive compatibility calculations
+    return this.centralPreferences();
+  }
+
+  getAttributeValuesForNode(nodeId: string): number[] {
+    const node = this.nodes.find(n => n.id === nodeId);
+    return node ? node.attributes : [];
+  }
+
+  updateCentralNodeAttribute(attributeIndex: number, event: Event): void {
+    const target = event.target as HTMLInputElement;
+    const value = parseInt(target.value, 10);
+    
+    if (isNaN(value) || value < 0 || value > 100) {
+      // Reset to current value if invalid
+      const currentValues = this.getCurrentAttributeValues();
+      target.value = (currentValues[attributeIndex] || 0).toString();
+      return;
+    }
+    
+    // Update the central node's attribute
+    const centralNodeId = this.selectedCentralNodeId();
+    if (centralNodeId) {
+      this.updateNodeAttributeValue(centralNodeId, attributeIndex, value);
+      
+      // Update central preferences to match the new value
+      const currentPrefs = [...this.centralPreferences()];
+      currentPrefs[attributeIndex] = value;
+      this.centralPreferences.set(currentPrefs);
+      
+      // Recalculate all compatibilities with the new central preferences
+      this.nodeService.updateAllCompatibilities(currentPrefs);
+      
+      // Clear equilibrium positions to trigger recalculation
+      // Continuous physics will automatically respond to changes
+    }
+  }
+
   getCentralNodeAttributes(): number[] {
     return this.centralPreferences();
+  }
+
+  // Dynamic Attribute Management Methods
+  addAttribute(): void {
+    const currentAttributes = this.nodeService.getAttributeNames();
+    
+    // Check if we've reached the maximum number of attributes
+    if (currentAttributes.length >= 15) {
+      alert('Maximum number of attributes (15) reached. Please remove an attribute before adding a new one.');
+      return;
+    }
+    
+    const newAttributeName = prompt('Enter new attribute name:');
+    if (!newAttributeName || !newAttributeName.trim()) {
+      return; // User cancelled or entered empty name
+    }
+    
+    const trimmedName = newAttributeName.trim();
+    
+    // Validate name length
+    if (trimmedName.length > 30) {
+      alert('Attribute name is too long. Please use 30 characters or less.');
+      return;
+    }
+    
+    // Validate name format (alphanumeric, spaces, and common punctuation)
+    const nameRegex = /^[a-zA-Z0-9\s\-_.,!?()]+$/;
+    if (!nameRegex.test(trimmedName)) {
+      alert('Attribute name contains invalid characters. Please use only letters, numbers, spaces, and common punctuation.');
+      return;
+    }
+    
+    if (this.nodeService.validateAttributeName(trimmedName)) {
+      this.nodeService.addAttribute(trimmedName, 50);
+      this.updateAttributeNamesFromService();
+      
+      // Update central preferences to include the new attribute
+      const currentPrefs = [...this.centralPreferences()];
+      currentPrefs.push(50); // Default value for new attribute
+      this.centralPreferences.set(currentPrefs);
+      
+      // Recalculate all compatibilities
+      this.nodeService.updateAllCompatibilities(currentPrefs);
+      
+      // Recalculate equilibrium positions for static positioning
+      this.equilibriumPositions = [];
+    } else {
+      alert('Attribute name already exists. Please choose a different name.');
+    }
+  }
+
+  removeAttribute(attributeIndex: number): void {
+    const attributeNames = this.nodeService.getAttributeNames();
+    
+    // Check if we have the minimum number of attributes
+    if (attributeNames.length <= 1) {
+      alert('Cannot remove the last attribute. At least one attribute is required.');
+      return;
+    }
+    
+    const attributeName = attributeNames[attributeIndex];
+    
+    if (!attributeName) {
+      alert('Invalid attribute selected.');
+      return;
+    }
+    
+    if (confirm(`Are you sure you want to remove the attribute "${attributeName}"? This will affect all nodes and cannot be undone.`)) {
+      this.nodeService.removeAttribute(attributeIndex);
+      this.updateAttributeNamesFromService();
+      
+      // Update central preferences to remove the attribute
+      const currentPrefs = [...this.centralPreferences()];
+      currentPrefs.splice(attributeIndex, 1);
+      this.centralPreferences.set(currentPrefs);
+      
+      // Recalculate all compatibilities
+      this.nodeService.updateAllCompatibilities(currentPrefs);
+      
+      // Recalculate equilibrium positions for static positioning
+      this.equilibriumPositions = [];
+    }
+  }
+
+  renameAttribute(attributeIndex: number): void {
+    const attributeNames = this.nodeService.getAttributeNames();
+    const currentName = attributeNames[attributeIndex];
+    
+    if (!currentName) {
+      alert('Invalid attribute selected.');
+      return;
+    }
+    
+    const newName = prompt(`Rename attribute "${currentName}":`, currentName);
+    
+    if (!newName || !newName.trim()) {
+      return; // User cancelled or entered empty name
+    }
+    
+    const trimmedName = newName.trim();
+    
+    if (trimmedName === currentName) {
+      return; // No change
+    }
+    
+    // Validate name length
+    if (trimmedName.length > 30) {
+      alert('Attribute name is too long. Please use 30 characters or less.');
+      return;
+    }
+    
+    // Validate name format
+    const nameRegex = /^[a-zA-Z0-9\s\-_.,!?()]+$/;
+    if (!nameRegex.test(trimmedName)) {
+      alert('Attribute name contains invalid characters. Please use only letters, numbers, spaces, and common punctuation.');
+      return;
+    }
+    
+    if (this.nodeService.validateAttributeName(trimmedName, attributeIndex)) {
+      this.nodeService.renameAttribute(attributeIndex, trimmedName);
+      this.updateAttributeNamesFromService();
+    } else {
+      alert('Attribute name already exists. Please choose a different name.');
+    }
+  }
+
+  updateNodeAttributeValue(nodeId: string, attributeIndex: number, value: number): void {
+    // Validate input
+    if (!nodeId || attributeIndex < 0 || isNaN(value)) {
+      console.error('Invalid parameters for updateNodeAttributeValue');
+      return;
+    }
+    
+    // Clamp value to valid range
+    const clampedValue = Math.max(0, Math.min(100, value));
+    
+    this.nodeService.updateNodeAttributeValue(nodeId, attributeIndex, clampedValue);
+      
+      // If this is the central node, update preferences too
+      if (nodeId === this.selectedCentralNodeId()) {
+      const node = this.nodes.find(n => n.id === nodeId);
+      if (node) {
+        this.centralPreferences.set([...node.attributes]);
+        this.nodeService.updateAllCompatibilities(node.attributes);
+      }
+    }
+  }
+
+  private updateAttributeNamesFromService(): void {
+    const serviceAttributeNames = this.nodeService.getAttributeNames();
+    this.attributeNames.set(serviceAttributeNames);
+  }
+
+  // Dropdown-based attribute management methods
+  onNodeSelectionChange(nodeId: string): void {
+    this.selectedNodeForAttributes.set(nodeId);
+    this.selectedAttributeForEdit.set(-1); // Reset attribute selection
+  }
+
+  onAttributeSelectionChange(attributeIndex: number): void {
+    this.selectedAttributeForEdit.set(attributeIndex);
+  }
+
+  getSelectedNodeAttributes(): number[] {
+    const nodeId = this.selectedNodeForAttributes();
+    if (!nodeId) return [];
+    return this.getNodeAttributes(nodeId);
+  }
+
+  getSelectedNodeAttributeValue(): number {
+    const nodeId = this.selectedNodeForAttributes();
+    const attributeIndex = this.selectedAttributeForEdit();
+    if (!nodeId || attributeIndex === -1) return 0;
+    
+    const attributes = this.getNodeAttributes(nodeId);
+    return attributes[attributeIndex] || 0;
+  }
+
+  updateSelectedNodeAttribute(event: Event): void {
+    const target = event.target as HTMLInputElement;
+    const value = parseInt(target.value, 10);
+    
+    if (isNaN(value)) return;
+    
+    const nodeId = this.selectedNodeForAttributes();
+    const attributeIndex = this.selectedAttributeForEdit();
+    
+    if (!nodeId || attributeIndex === -1) return;
+    
+    // Clamp value to valid range
+    const clampedValue = Math.max(0, Math.min(100, value));
+    
+    // Update the specific node's attribute
+    this.updateNodeAttributeValue(nodeId, attributeIndex, clampedValue);
+    
+    // If this is the central node, also update central preferences
+    if (nodeId === this.selectedCentralNodeId()) {
+      const currentPrefs = [...this.centralPreferences()];
+      currentPrefs[attributeIndex] = clampedValue;
+      this.centralPreferences.set(currentPrefs);
+      this.nodeService.updateAllCompatibilities(currentPrefs);
+      // Continuous physics will automatically respond to changes
+    }
+  }
+
+  getAvailableNodes(): Node[] {
+    return this.nodes.filter(node => node.id); // Return all nodes
+  }
+
+  getAvailableAttributes(): string[] {
+    return this.nodeService.getAttributeNames();
+  }
+
+  getSelectedNodeName(): string {
+    const nodeId = this.selectedNodeForAttributes();
+    if (!nodeId) return '';
+    
+    const node = this.nodes.find(n => n.id === nodeId);
+    return node ? node.name : '';
+  }
+
+  getSelectedAttributeName(): string {
+    const attributeIndex = this.selectedAttributeForEdit();
+    if (attributeIndex === -1) return '';
+    
+    const attributes = this.getAvailableAttributes();
+    return attributes[attributeIndex] || `Attribute ${attributeIndex + 1}`;
+  }
+
+  resetSelectedNodeToDefaults(): void {
+    const nodeId = this.selectedNodeForAttributes();
+    if (!nodeId) return;
+    
+    // Reset all attributes to 50 (default value)
+    const defaultValues = Array.from({ length: this.getAvailableAttributes().length }, () => 50);
+    
+    // Update the node's attributes
+    this.nodeService.updateNodeAttributes(nodeId, defaultValues);
+    
+    // If this is the central node, also update central preferences
+    if (nodeId === this.selectedCentralNodeId()) {
+      this.centralPreferences.set([...defaultValues]);
+      this.nodeService.updateAllCompatibilities(defaultValues);
+      // Continuous physics will automatically respond to changes
+    }
+  }
+
+  resetSelectedAttributeToDefault(): void {
+    const nodeId = this.selectedNodeForAttributes();
+    const attributeIndex = this.selectedAttributeForEdit();
+    
+    if (!nodeId || attributeIndex === -1) return;
+    
+    // Reset only the selected attribute to 50 (default value)
+    this.updateNodeAttribute(nodeId, attributeIndex, 50);
+    
+    // If this is the central node, also update central preferences
+    if (nodeId === this.selectedCentralNodeId()) {
+      const currentPrefs = [...this.centralPreferences()];
+      currentPrefs[attributeIndex] = 50;
+      this.centralPreferences.set(currentPrefs);
+      this.nodeService.updateAllCompatibilities(currentPrefs);
+      // Continuous physics will automatically respond to changes
+    }
   }
 
   // Performance and stress testing
@@ -596,7 +884,7 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
     this.resetNodes();
     
     // Clear equilibrium positions to force recalculation
-    this.equilibriumPositions = [];
+    // Continuous physics will automatically respond to changes
     
     console.log('Diverse test configuration generated:', diverseConfig.centralPreferences);
   }
@@ -676,41 +964,42 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
   private stepPhysics(dt: number): void {
     if (!this.centralNode || this.nodeSpheres.length === 0) return;
 
-    // Only calculate equilibrium positions when needed (startup or central node change)
-    if (this.equilibriumPositions.length === 0 || this.isCalculatingEquilibrium) {
-      console.log('Triggering equilibrium calculation - positions needed:', this.equilibriumPositions.length === 0, 'calculating:', this.isCalculatingEquilibrium);
+    // STATIC POSITIONING: Calculate equilibrium positions once and keep nodes there
+    if (this.equilibriumPositions.length === 0) {
       this.calculateEquilibriumPositions();
       return;
     }
 
-    // Keep nodes at their equilibrium positions (no continuous movement)
+    // Keep nodes at their calculated equilibrium positions
     for (let i = 0; i < this.nodeSpheres.length; i++) {
       const mesh = this.nodeSpheres[i];
       const nodeId = (mesh as any).nodeId;
       const node = this.nodes.find(n => n.id === nodeId);
       
-      // Skip only currently dragged nodes, but allow central node to move to new position
+      if (!node || node.isCentral) {
+        // Central node stays at center
+        if (node && node.isCentral) {
+          mesh.position.set(0, 0, 0);
+        }
+        continue;
+      }
+
+      // Skip currently dragged nodes
       if (this.dragging && this.dragged === mesh) continue;
       
-      // Return to equilibrium position with smooth interpolation
+      // Move to equilibrium position with smooth interpolation
       const targetPosition = this.equilibriumPositions[i];
       if (targetPosition) {
         const currentPos = mesh.position;
         const distance = currentPos.distanceTo(targetPosition);
         
-        // If node is far from equilibrium, smoothly return it
+        // If node is far from equilibrium, smoothly move it there
         if (distance > 0.1) {
-          const returnSpeed = 2.0; // Speed of return to equilibrium
+          const returnSpeed = 2.0;
           const direction = targetPosition.clone().sub(currentPos).normalize();
           const moveDistance = Math.min(distance, returnSpeed * dt);
           
-          const oldPos = mesh.position.clone();
           mesh.position.add(direction.multiplyScalar(moveDistance));
-          
-          // Debug logging for movement
-          if (Math.random() < 0.01) { // Log occasionally to avoid spam
-            console.log(`Node ${nodeId} moving from`, oldPos, 'towards', targetPosition, 'distance:', distance);
-          }
           
           // Update service with new position
           this.nodeService.updateNodePosition(nodeId, {
@@ -729,188 +1018,173 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
   private calculateEquilibriumPositions(): void {
     if (!this.centralNode || this.nodeSpheres.length === 0) return;
     
-    this.isCalculatingEquilibrium = true;
-    console.log('Calculating equilibrium positions...');
+    console.log('Calculating attribute-based equilibrium positions...');
     
-    // Set a timeout to prevent hanging
-    const timeoutId = setTimeout(() => {
-      if (this.isCalculatingEquilibrium) {
-        console.warn('Equilibrium calculation timed out, stopping...');
-        this.isCalculatingEquilibrium = false;
-      }
-    }, 10000); // 10 second timeout
+    // Get current node data
+    const currentNodes = this.nodeService.nodesSubject.value;
+    const currentCentralNode = this.nodeService.centralNodeSubject.value;
     
-    // Run calculation asynchronously to avoid blocking UI
-    setTimeout(() => {
-      this.runEquilibriumCalculation();
-      clearTimeout(timeoutId); // Clear timeout if calculation completes
-    }, 0);
-  }
-
-  private runEquilibriumCalculation(): void {
-    // Safety check to prevent excessive calculations
-    if (this.nodeSpheres.length > 50) {
-      console.warn('Too many nodes, skipping equilibrium calculation to prevent hanging');
-      this.isCalculatingEquilibrium = false;
-      return;
-    }
-
-    // Update physics service config
-    this.physicsService.updatePhysicsConfig({
-      attractionK: this.attractionK(),
-      repulsionK: this.repulsionK(),
-      damping: this.damping()
-    });
+    if (!currentCentralNode) return;
 
     // Initialize equilibrium positions array
     this.equilibriumPositions = [];
     
-    // Run physics simulation for a fixed number of steps to find equilibrium
-    const simulationSteps = Math.min(200, 50 + this.nodeSpheres.length * 2); // Adaptive steps based on node count
-    const dt = 0.016; // Fixed timestep (60fps)
+    // Group nodes by their attribute values for clustering
+    const nodeGroups = new Map<string, Node[]>();
     
-    console.log(`Running equilibrium calculation with ${simulationSteps} steps for ${this.nodeSpheres.length} nodes`);
-    
-    // Initialize velocities to zero
-    for (let i = 0; i < this.nodeSpheres.length; i++) {
-      this.velocities[i] = new THREE.Vector3(0, 0, 0);
-    }
-    
-    // Run physics simulation with progress tracking
-    for (let step = 0; step < simulationSteps; step++) {
-      // Check if calculation was cancelled
-      if (!this.isCalculatingEquilibrium) {
-        console.log('Equilibrium calculation cancelled');
-        return;
-      }
-      // Calculate forces for each node (excluding central node)
-      for (let i = 0; i < this.nodeSpheres.length; i++) {
-        const mesh = this.nodeSpheres[i];
-        const nodeId = (mesh as any).nodeId;
-        const node = this.nodes.find(n => n.id === nodeId);
-        
-        if (!node || node.isCentral) continue;
-
-        // Reset velocity for this step
-        this.velocities[i].set(0, 0, 0);
-
-        // Calculate attraction force from central node
-        if (!this.centralNode) continue;
-        const attractionForce = this.physicsService.calculateAttractionForce(
-          this.centralNode,
-          node,
-          dt
-        );
-
-        // Apply attraction force
-        this.velocities[i].add(new THREE.Vector3(
-          attractionForce.x,
-          attractionForce.y,
-          attractionForce.z
-        ));
-
-        // Calculate repulsion forces from other nodes (excluding central)
-        const maxRepulsionDistance = 50;
-        for (let j = 0; j < this.nodeSpheres.length; j++) {
-          if (i === j) continue;
-          
-          const otherMesh = this.nodeSpheres[j];
-          const otherNodeId = (otherMesh as any).nodeId;
-          const otherNode = this.nodes.find(n => n.id === otherNodeId);
-          
-          if (!otherNode || otherNode.isCentral) continue;
-
-          // Quick distance check
-          const dx = otherNode.position.x - node.position.x;
-          const dy = otherNode.position.y - node.position.y;
-          const dz = otherNode.position.z - node.position.z;
-          const distanceSquared = dx * dx + dy * dy + dz * dz;
-          
-          if (distanceSquared > maxRepulsionDistance * maxRepulsionDistance) continue;
-
-          const repulsionForces = this.physicsService.calculateRepulsionForce(node, otherNode, dt);
-          
-          // Apply repulsion force
-          this.velocities[i].add(new THREE.Vector3(
-            repulsionForces.force1.x,
-            repulsionForces.force1.y,
-            repulsionForces.force1.z
-          ));
-        }
-
-        // Apply damping
-        const dampedVelocity = this.physicsService.applyDamping(
-          {
-            x: this.velocities[i].x,
-            y: this.velocities[i].y,
-            z: this.velocities[i].z
-          },
-          this.damping()
-        );
-
-        this.velocities[i].set(dampedVelocity.x, dampedVelocity.y, dampedVelocity.z);
-      }
-
-      // Update positions (only for non-central nodes)
-      for (let i = 0; i < this.nodeSpheres.length; i++) {
-        const mesh = this.nodeSpheres[i];
-        const nodeId = (mesh as any).nodeId;
-        const node = this.nodes.find(n => n.id === nodeId);
-        
-        if (!node || node.isCentral) continue;
-        
-        // Update position
-        mesh.position.addScaledVector(this.velocities[i], dt);
-      }
-      
-      // Ensure central node stays at center
-      for (let i = 0; i < this.nodeSpheres.length; i++) {
-        const mesh = this.nodeSpheres[i];
-        const nodeId = (mesh as any).nodeId;
-        const node = this.nodes.find(n => n.id === nodeId);
-        
-        if (node && node.isCentral) {
-          mesh.position.set(0, 0, 0);
-        }
-      }
-    }
-    
-    // Store final positions as equilibrium positions
+    // Calculate position for each node
     for (let i = 0; i < this.nodeSpheres.length; i++) {
       const mesh = this.nodeSpheres[i];
       const nodeId = (mesh as any).nodeId;
-      const node = this.nodes.find(n => n.id === nodeId);
+      const node = currentNodes.find(n => n.id === nodeId);
       
-      if (node) {
-        if (node.isCentral) {
-          // Central node should always be at center
-          this.equilibriumPositions[i] = new THREE.Vector3(0, 0, 0);
+      if (!node) {
+        this.equilibriumPositions[i] = new THREE.Vector3(0, 0, 0);
+        continue;
+      }
+      
+      if (node.isCentral) {
+        // Central node at center
+        this.equilibriumPositions[i] = new THREE.Vector3(0, 0, 0);
+        continue;
+      }
+      
+      // Create a deterministic key based on attribute values
+      const attributeKey = node.attributes.join(',');
+      
+      if (!nodeGroups.has(attributeKey)) {
+        nodeGroups.set(attributeKey, []);
+      }
+      nodeGroups.get(attributeKey)!.push(node);
+    }
+    
+    // Calculate positions for each group
+    let groupIndex = 0;
+    for (const [attributeKey, nodes] of nodeGroups) {
+      // Calculate compatibility with central node (same for all nodes in group)
+      const compatibility = this.physicsService.calculateCompatibility(
+        currentCentralNode.attributes,
+        nodes[0].attributes
+      );
+      
+      // Base distance from center based on compatibility (higher compatibility = closer)
+      const baseDistance = 15 + (1 - compatibility) * 60; // Range: 15-75 units
+      
+      // Calculate deterministic angle based on attribute values
+      const attributeHash = this.hashAttributeValues(nodes[0].attributes);
+      const angle = (attributeHash % 360) * (Math.PI / 180); // Convert to radians
+      
+      // Calculate height based on attribute values (deterministic)
+      const heightHash = this.hashAttributeValues(nodes[0].attributes.slice().reverse());
+      const height = ((heightHash % 100) - 50) * 0.4; // Range: -20 to +20
+      
+      // Base position for this attribute group
+      const basePosition = new THREE.Vector3(
+        Math.cos(angle) * baseDistance,
+        height,
+        Math.sin(angle) * baseDistance
+      );
+      
+      // Position each node in the group around the base position
+      for (let nodeIndex = 0; nodeIndex < nodes.length; nodeIndex++) {
+        const node = nodes[nodeIndex];
+        const meshIndex = this.nodeSpheres.findIndex(mesh => (mesh as any).nodeId === node.id);
+        
+        if (meshIndex === -1) continue;
+        
+        let targetPosition: THREE.Vector3;
+        
+        if (nodes.length === 1) {
+          // Single node - place at base position
+          targetPosition = basePosition.clone();
         } else {
-          // Outer nodes use their calculated positions
-          this.equilibriumPositions[i] = mesh.position.clone();
+          // Multiple nodes with same attributes - arrange in a circle around base position
+          const nodeAngle = (nodeIndex / nodes.length) * Math.PI * 2;
+          const clusterRadius = 3 + nodeIndex * 1.5; // Small radius for clustering
+          
+          targetPosition = new THREE.Vector3(
+            basePosition.x + Math.cos(nodeAngle) * clusterRadius,
+            basePosition.y + (nodeIndex % 2 === 0 ? 2 : -2), // Slight vertical offset
+            basePosition.z + Math.sin(nodeAngle) * clusterRadius
+          );
         }
+        
+        // Apply repulsion from other groups to avoid overlap
+        const minDistance = 8;
+        const maxIterations = 10;
+        
+        for (let iter = 0; iter < maxIterations; iter++) {
+          let repulsionForce = new THREE.Vector3(0, 0, 0);
+          let hasRepulsion = false;
+          
+          // Check repulsion from other groups
+          for (const [otherKey, otherNodes] of nodeGroups) {
+            if (otherKey === attributeKey) continue;
+            
+            // Calculate similarity between groups
+            const similarity = this.physicsService.calculateSimilarity(
+              nodes[0].attributes,
+              otherNodes[0].attributes
+            );
+            
+            // Get approximate position of other group
+            const otherCompatibility = this.physicsService.calculateCompatibility(
+              currentCentralNode.attributes,
+              otherNodes[0].attributes
+            );
+            const otherDistance = 15 + (1 - otherCompatibility) * 60;
+            const otherAngle = (this.hashAttributeValues(otherNodes[0].attributes) % 360) * (Math.PI / 180);
+            const otherHeight = ((this.hashAttributeValues(otherNodes[0].attributes.slice().reverse()) % 100) - 50) * 0.4;
+            
+            const otherGroupPos = new THREE.Vector3(
+              Math.cos(otherAngle) * otherDistance,
+              otherHeight,
+              Math.sin(otherAngle) * otherDistance
+            );
+            
+            const direction = targetPosition.clone().sub(otherGroupPos);
+            const distance = direction.length();
+            
+            // Apply repulsion based on similarity
+            if (distance < minDistance * 2) {
+              hasRepulsion = true;
+              const repulsionStrength = (1 - similarity) * 3.0; // Less similar = more repulsion
+              const repulsionMagnitude = repulsionStrength / (distance * distance);
+              
+              repulsionForce.add(direction.normalize().multiplyScalar(repulsionMagnitude));
+            }
+          }
+          
+          // Apply repulsion force to adjust position
+          if (hasRepulsion) {
+            targetPosition.add(repulsionForce.multiplyScalar(0.3));
+          }
+          
+          // Keep within reasonable bounds
+          const distanceFromCenter = targetPosition.length();
+          if (distanceFromCenter > 120) {
+            targetPosition.normalize().multiplyScalar(120);
+          } else if (distanceFromCenter < 8) {
+            targetPosition.normalize().multiplyScalar(8);
+          }
+        }
+        
+        this.equilibriumPositions[meshIndex] = targetPosition;
       }
-    }
-    
-    // Update service with final positions
-    for (let i = 0; i < this.nodeSpheres.length; i++) {
-      const mesh = this.nodeSpheres[i];
-      const nodeId = (mesh as any).nodeId;
       
-      this.nodeService.updateNodePosition(nodeId, {
-        x: mesh.position.x,
-        y: mesh.position.y,
-        z: mesh.position.z
-      });
+      groupIndex++;
     }
     
-    this.isCalculatingEquilibrium = false;
-    console.log('Equilibrium positions calculated!');
-    console.log('Equilibrium positions:', this.equilibriumPositions.map((pos, i) => ({
-      index: i,
-      position: pos ? { x: pos.x, y: pos.y, z: pos.z } : 'null',
-      nodeId: this.nodeSpheres[i] ? (this.nodeSpheres[i] as any).nodeId : 'unknown'
-    })));
+    console.log('Attribute-based equilibrium positions calculated!');
+  }
+  
+  private hashAttributeValues(attributes: number[]): number {
+    // Create a deterministic hash from attribute values
+    let hash = 0;
+    for (let i = 0; i < attributes.length; i++) {
+      hash = ((hash << 5) - hash + attributes[i]) & 0xffffffff;
+    }
+    return Math.abs(hash);
   }
 
   private animateParticles(dt: number): void {
@@ -991,12 +1265,18 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
     const obj = this.intersectNode(e);
     if (obj && (obj as any).isNode) {
       const nodeId = (obj as any).nodeId;
-      const node = this.nodes.find(n => n.id === nodeId);
+      // Get current node data directly from service to ensure we have the latest attributes
+      const currentNodes = this.nodeService.nodesSubject.value;
+      const node = currentNodes.find(n => n.id === nodeId);
       
       if (node) {
         const isCentral = node.isCentral;
+        // Get current central node preferences for compatibility calculation
+        const currentCentralNode = this.nodeService.centralNodeSubject.value;
+        const centralPrefs = currentCentralNode ? currentCentralNode.attributes : this.centralPreferences();
+        
         const compat = this.physicsService.calculateCompatibility(
-          this.centralPreferences(),
+          centralPrefs,
           node.attributes
         );
         
@@ -1004,7 +1284,7 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
         tooltipContent += `Attributes:\n`;
         
         // Show attributes with names and visual indicators
-        const attrNames = this.attributeNames();
+        const attrNames = this.nodeService.getAttributeNames();
         for (let i = 0; i < node.attributes.length; i++) {
           const name = attrNames[i] || `Attr ${i + 1}`;
           const value = node.attributes[i];
@@ -1048,7 +1328,9 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
       
       if (e.button === 0) { // Left click - start dragging or editing
         if (e.ctrlKey || e.metaKey) { // Ctrl/Cmd + click - edit attributes
-          this.startEditingNode(nodeId, 0); // Start editing first attribute
+          // Set the node in the attribute management dropdown
+          this.selectedNodeForAttributes.set(nodeId);
+          this.selectedAttributeForEdit.set(-1); // Reset attribute selection
         } else {
           this.dragging = true;
           this.dragged = obj;

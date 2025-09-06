@@ -2,6 +2,7 @@ export interface Node {
   id: string;
   name: string;
   attributes: number[];
+  attributeNames?: string[]; // Dynamic attribute names
   position: { x: number; y: number; z: number };
   velocity: { x: number; y: number; z: number };
   radius: number;
@@ -43,7 +44,21 @@ export interface ForceVector {
 export interface NodeUpdate {
   nodeId: string;
   attributes?: number[];
+  attributeNames?: string[];
   position?: { x: number; y: number; z: number };
   isCentral?: boolean;
+}
+
+export interface AttributeConfig {
+  names: string[];
+  values: number[];
+}
+
+export interface AttributeChange {
+  type: 'add' | 'remove' | 'rename' | 'reorder';
+  attributeIndex?: number;
+  oldName?: string;
+  newName?: string;
+  defaultValue?: number;
 }
 
