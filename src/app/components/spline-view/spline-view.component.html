@@ -1,58 +1,38 @@
-<!-- Radial UI Elements -->
-<div class="radial-ui">
-  <!-- Top Left: Programmable Biology -->
-  <div class="radial-element" style="top: 15%; left: 10%;" (click)="selectNode('biology')">
-    <div class="label-small">PROGRAMMABLE</div>
-    <div class="label-large">BIOLOGY</div>
-    <div class="icon">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-      </svg>
+<!-- Performance Monitor - Hidden for better performance -->
+<!-- <div class="performance-monitor glass-panel">
+  <div class="perf-header">
+    <h4>Performance</h4>
+    <button class="neomorphic-btn small" (click)="runStressTest()">Stress Test</button>
+  </div>
+  <div class="perf-metrics">
+    <div class="metric">
+      <span class="label">FPS:</span>
+      <span class="value" [class.warning]="fps() < 30" [class.good]="fps() >= 60">{{ fps() }}</span>
+    </div>
+    <div class="metric">
+      <span class="label">Nodes:</span>
+      <span class="value">{{ performanceMetrics().nodeCount }}</span>
+    </div>
+    <div class="metric">
+      <span class="label">Memory:</span>
+      <span class="value">{{ performanceMetrics().memoryUsage | number:'1.1-1' }}MB</span>
     </div>
   </div>
+</div> -->
 
-  <!-- Top Right: Scenius Web3 -->
-  <div class="radial-element" style="top: 15%; right: 10%;" (click)="selectNode('web3')">
-    <div class="label-small">SCENIUS</div>
-    <div class="label-large">WEB3</div>
-    <div class="icon">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
-      </svg>
-    </div>
+<!-- Status Indicators -->
+<div class="equilibrium-indicator glass-panel" *ngIf="isCalculatingEquilibrium">
+  <div class="indicator-content">
+    <div class="spinner"></div>
+    <span>Calculating equilibrium positions...</span>
   </div>
+</div>
 
-  <!-- Mid Left: Breakthrough Computation -->
-  <div class="radial-element" style="top: 50%; left: 5%;" (click)="selectNode('computation')">
-    <div class="label-small">BREAKTHROUGH</div>
-    <div class="label-large">COMPUTATION & ENGINEERING</div>
-    <div class="icon">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.94-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
-      </svg>
-    </div>
-  </div>
-
-  <!-- Mid Right: About Blueyard -->
-  <div class="radial-element" style="top: 50%; right: 5%;" (click)="selectNode('about')">
-    <div class="label-small">ABOUT</div>
-    <div class="label-large">BLUEYARD BY</div>
-    <div class="icon">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-      </svg>
-    </div>
-  </div>
-
-  <!-- Bottom Center: Liberated Knowledge -->
-  <div class="radial-element" style="bottom: 20%; left: 50%; transform: translateX(-50%);" (click)="selectNode('knowledge')">
-    <div class="label-small">LIBERATED</div>
-    <div class="label-large">KNOWLEDGE & DATA</div>
-    <div class="icon">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.94-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
-      </svg>
-    </div>
+<!-- Central Node Change Indicator -->
+<div class="central-node-indicator glass-panel" *ngIf="centralNodeChangeInProgress">
+  <div class="indicator-content">
+    <div class="spinner"></div>
+    <span>Changing central node and resetting simulation...</span>
   </div>
 </div>
 
@@ -106,9 +86,9 @@
     
     <div class="control-group">
       <label>Central Node Selection</label>
-      <select class="neomorphic-select" (change)="selectCentralNode($any($event.target).value)">
-        <option *ngFor="let node of nodeSpheres; let i = index" [value]="'node-' + i" [selected]="selectedCentralNodeId() === 'node-' + i">
-          Node {{ i + 1 }}
+      <select class="neomorphic-select" (change)="onCentralNodeChange($any($event.target).value)">
+        <option *ngFor="let node of nodes; let i = index" [value]="node.id" [selected]="selectedCentralNodeId() === node.id">
+          {{ node.name }} {{ node.isCentral ? '(Current)' : '' }}
         </option>
       </select>
     </div>
@@ -123,14 +103,14 @@
 <!-- Attribute Editor Panel -->
 <div class="attribute-editor glass-panel" *ngIf="editingNodeId()">
   <div class="editor-header">
-    <h3>Edit Node {{ editingNodeId()?.replace('node-', '') }} Attributes</h3>
+    <h3>Edit {{ editingNodeId() }} Attributes</h3>
     <button class="neomorphic-btn close-btn" (click)="stopEditingNode()">×</button>
   </div>
   
   <div class="editor-content">
     <div class="attribute-list">
       <div class="attribute-item" *ngFor="let attr of getNodeAttributes(editingNodeId()!); let i = index">
-        <label>Attribute {{ i + 1 }}</label>
+        <label>{{ attributeNames()[i] || 'Attribute ' + (i + 1) }}</label>
         <div class="attribute-controls">
           <input type="range" min="0" max="100" 
                  [ngModel]="attr" 
@@ -142,6 +122,9 @@
                  class="number-input">
         </div>
       </div>
+    </div>
+    <div class="editor-actions">
+      <button class="neomorphic-btn" (click)="resetToDefaults()">Reset to Defaults</button>
     </div>
   </div>
 </div>
