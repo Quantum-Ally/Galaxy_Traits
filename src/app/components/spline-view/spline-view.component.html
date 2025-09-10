@@ -98,6 +98,81 @@
       <input type="text" [ngModel]="centralPreferences().join(',')" (ngModelChange)="onCentralPrefsChange($event)" class="text-input">
     </div>
     
+    <div class="control-group">
+      <label>Central Node Color</label>
+      <div class="color-control">
+        <input type="color" [ngModel]="centralNodeColor()" (ngModelChange)="onCentralNodeColorChange($event)" class="color-picker">
+        <div class="color-presets">
+          <button *ngFor="let preset of colorPresets" 
+                  class="color-preset-btn" 
+                  [style.background-color]="preset.color"
+                  [title]="preset.name"
+                  (click)="onCentralNodeColorChange(preset.color)">
+          </button>
+        </div>
+        <span class="current-color-value">{{ centralNodeColor() }}</span>
+      </div>
+    </div>
+    
+    <div class="control-group">
+      <label>Node Name Editor</label>
+      <div class="node-name-editor">
+        <!-- Node Selection for Name Editing -->
+        <div class="name-edit-dropdown">
+          <label>Select Node to Rename</label>
+          <select 
+            class="neomorphic-select" 
+            [ngModel]="selectedNodeForNameEdit()" 
+            (ngModelChange)="onNodeForNameEditChange($event)">
+            <option value="">Choose a node...</option>
+            <option *ngFor="let node of nodes" [value]="node.id">
+              {{ node.name }} {{ node.isCentral ? '(Central)' : '' }}
+            </option>
+          </select>
+        </div>
+        
+        <!-- Name Input Field (only show when node is selected) -->
+        <div class="name-input-group" *ngIf="selectedNodeForNameEdit()">
+          <label>New Name</label>
+          <div class="name-input-controls">
+            <input 
+              type="text" 
+              class="text-input" 
+              [ngModel]="newNodeName()" 
+              (ngModelChange)="newNodeName.set($event)"
+              placeholder="Enter new name..."
+              maxlength="30">
+            <button 
+              class="neomorphic-btn small"
+              (click)="updateNodeName()"
+              [disabled]="!newNodeName().trim() || newNodeName().trim() === getSelectedNodeForNameEdit()?.name"
+              title="Save new name">
+              💾 Save
+            </button>
+          </div>
+          <div class="current-name-display" *ngIf="getSelectedNodeForNameEdit()">
+            Current: "{{ getSelectedNodeForNameEdit()?.name }}"
+          </div>
+        </div>
+        
+        <!-- Quick Actions -->
+        <div class="name-edit-actions" *ngIf="selectedNodeForNameEdit()">
+          <button 
+            class="neomorphic-btn small" 
+            (click)="resetNodeNameToOriginal()"
+            title="Reset to original generated name">
+            🔄 Reset
+          </button>
+          <button 
+            class="neomorphic-btn small" 
+            (click)="generateRandomName()"
+            title="Generate a random name">
+            🎲 Random
+          </button>
+        </div>
+      </div>
+    </div>
+    
     <!-- Attribute Management Section -->
     <div class="control-group attribute-management">
       <label>Attribute Management</label>
@@ -202,3 +277,6 @@
 <div class="canvas-container">
   <canvas #threeCanvas class="three-canvas"></canvas>
 </div>
+
+<!-- Camera View Control -->
+<app-camera-view-control></app-camera-view-control>

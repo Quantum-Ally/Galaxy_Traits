@@ -17,6 +17,29 @@ export class MockDataService {
     selectedCentralNodeId: 'central'
   };
 
+  private static readonly PERSON_NAMES: string[] = [
+    'Emma Thompson',
+    'James Anderson',
+    'Sophia Williams',
+    'Michael Brown',
+    'Isabella Garcia',
+    'William Martinez',
+    'Olivia Davis',
+    'Benjamin Wilson',
+    'Charlotte Miller',
+    'Lucas Rodriguez',
+    'Amelia Taylor',
+    'Henry Thomas',
+    'Harper Jackson',
+    'Samuel White',
+    'Evelyn Harris',
+    'David Clark',
+    'Abigail Lewis',
+    'Joseph Walker',
+    'Emily Hall',
+    'Daniel Young'
+  ];
+
   private static readonly SAMPLE_NODES: Partial<Node>[] = [
     {
       id: 'biology',
@@ -90,10 +113,10 @@ export class MockDataService {
     // Generate default attribute names
     const defaultAttributeNames = this.getAttributeNames(numAttributes);
 
-    // Create central node as "sphere" (purple)
+    // Create central node with person name (purple)
     const centralNode: Node = {
       id: 'sphere',
-      name: 'Central Sphere',
+      name: 'Alexander Johnson',
       attributes: [...centralPreferences],
       attributeNames: [...defaultAttributeNames],
       position: { x: 0, y: 0, z: 0 },
@@ -140,8 +163,8 @@ export class MockDataService {
       const compatibility = this.calculateCompatibility(centralPreferences, attributes);
 
       const node: Node = {
-        id: `sphere-clone-${i}`,
-        name: `Sphere Clone ${i + 1}`,
+        id: `person-${i}`,
+        name: this.PERSON_NAMES[i % this.PERSON_NAMES.length],
         attributes,
         attributeNames: [...defaultAttributeNames],
         position: {

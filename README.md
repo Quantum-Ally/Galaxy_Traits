@@ -1,211 +1,361 @@
-# Galaxy Traits Visualization Library
+# 🌌 Galaxy - 3D Node Visualization System
 
-A powerful 3D visualization library for interactive trait-based relationship mapping using Three.js and Angular. This library creates a solar-system-style visualization where nodes represent people or entities, and their relationships are determined by trait compatibility.
+A sophisticated 3D visualization system built with Angular and Three.js that creates an interactive galaxy of interconnected nodes representing people, traits, and relationships.
 
-## Features
+## 🚀 Features
 
-### 🎨 Visual Design
-- **Dark Neomorphic Theme** with neon purple/pink accents
-- **Animated Starfield Background** with floating particles
-- **Radial UI Elements** positioned around the central person
-- **Glass Morphism Effects** with backdrop blur
-- **Neon Glow Animations** and hover effects
+### 🎥 Advanced Camera System
+- **Free View Mode**: Freely movable camera with orbit controls
+- **Fixed View Modes**: 
+  - Top View (Bird's eye perspective)
+  - Front View (Direct front perspective)
+  - Side View (Side perspective)
+  - Isometric View (3D diagonal view)
+  - Close-up View (Zoomed detail view)
+- **Smooth Animations**: Fluid transitions between camera views
+- **Interactive UI**: Radial dropdown menu for camera control
 
-### 🔧 Interactive Features
-- **Draggable Nodes** - Click and drag nodes to reposition them
-- **Hover Tooltips** - Detailed information on node hover
-- **Central Node Selector** - Click radial elements to change the central person
-- **Real-time Physics Simulation** - Nodes attract/repel based on trait compatibility
-- **Configurable Controls** - Adjust physics parameters, node count, and attributes
+### 🌟 Node System
+- **Central Node**: Main focal point that other nodes orbit around
+- **Dynamic Node Generation**: Customizable number of nodes (3-20)
+- **Attribute-based Positioning**: Nodes position based on compatibility with central node
+- **Real-time Physics**: Equilibrium-based positioning system
+- **Interactive Nodes**: Drag, hover, and click interactions
 
-### ⚡ Performance
-- **High-Performance Simulation** with optimized Three.js rendering
-- **Particle System** with 1000+ animated particles
-- **Smooth 60fps Animation** with requestAnimationFrame
-- **Responsive Design** that works on all screen sizes
+### 🎛️ Attribute Management
+- **Dynamic Attributes**: Add, remove, and rename attributes on-the-fly
+- **Customizable Values**: 0-100 scale for each attribute
+- **Visual Feedback**: Real-time compatibility calculations
+- **Attribute Editing**: Individual node attribute modification
+- **Name Validation**: Ensures unique and valid attribute names
 
-## Installation
+### 🎨 Visual Effects
+- **Particle System**: Animated background particles for atmosphere
+- **Dynamic Lighting**: Ambient and directional lighting
+- **Material Effects**: Emissive and metallic materials
+- **Responsive Design**: Adapts to different screen sizes
+- **Performance Optimized**: Efficient rendering and animations
 
+### 📊 Interactive Controls
+- **Physics Parameters**: Adjust attraction, repulsion, and damping
+- **Node Configuration**: Change number of nodes and attributes
+- **Central Node Selection**: Switch between different central nodes
+- **Real-time Updates**: All changes apply immediately
+- **Performance Monitoring**: FPS and memory usage tracking
+
+## 🛠️ Technical Stack
+
+- **Frontend**: Angular 18+ (Standalone Components)
+- **3D Graphics**: Three.js with OrbitControls
+- **Language**: TypeScript
+- **Styling**: SCSS with responsive design
+- **State Management**: RxJS Observables and Angular Signals
+- **Build Tool**: Angular CLI with Vite
+
+## 📋 Prerequisites
+
+- Node.js (v18 or higher)
+- npm (v9 or higher)
+- Modern web browser with WebGL support
+
+## 🏃‍♂️ Getting Started
+
+### Installation
+
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd Galaxy/spline-app
+   ```
+
+2. **Install dependencies**
 ```bash
 npm install
 ```
 
-## Usage
+3. **Start development server**
+   ```bash
+   npm start
+   ```
 
-### Basic Usage
+4. **Open in browser**
+   Navigate to `http://localhost:4200`
 
-```typescript
-import { GalaxyTraitsLibraryComponent, GalaxyNode, GalaxyConfig } from './components/galaxy-traits-library/galaxy-traits-library.component';
-
-// In your component
-export class MyComponent {
-  config: GalaxyConfig = {
-    numNodes: 10,
-    numAttributes: 3,
-    attractionK: 50,
-    repulsionK: 30,
-    damping: 0.95,
-    centralPreferences: [50, 50, 50],
-    showControls: true,
-    theme: 'dark',
-    particleCount: 1000
-  };
-
-  nodes: GalaxyNode[] = [
-    {
-      id: 'person1',
-      name: 'Alice',
-      description: 'Software Engineer',
-      attributes: [80, 60, 90]
-    },
-    // ... more nodes
-  ];
-
-  onNodeSelected(node: GalaxyNode) {
-    console.log('Selected node:', node);
-  }
-
-  onConfigChanged(config: GalaxyConfig) {
-    console.log('Config updated:', config);
-  }
-}
-```
-
-```html
-<galaxy-traits-library 
-  [config]="config"
-  [nodes]="nodes"
-  (nodeSelected)="onNodeSelected($event)"
-  (configChanged)="onConfigChanged($event)">
-</galaxy-traits-library>
-```
-
-### Configuration Options
-
-#### GalaxyConfig Interface
-
-```typescript
-interface GalaxyConfig {
-  numNodes: number;           // Number of nodes to display (3-20)
-  numAttributes: number;      // Number of attributes per node (3-10)
-  attractionK: number;        // Attraction force strength (0-100)
-  repulsionK: number;         // Repulsion force strength (0-100)
-  damping: number;            // Velocity damping (0.8-1.0)
-  centralPreferences: number[]; // Central person's trait preferences
-  showControls: boolean;      // Show/hide control panel
-  theme: 'dark' | 'light';    // Visual theme
-  particleCount: number;      // Number of background particles
-}
-```
-
-#### GalaxyNode Interface
-
-```typescript
-interface GalaxyNode {
-  id: string;                 // Unique identifier
-  name: string;               // Display name
-  description: string;        // Tooltip description
-  attributes: number[];       // Trait values (0-100)
-  position?: Vector3;         // Optional 3D position
-}
-```
-
-## Physics Simulation
-
-The library uses a sophisticated physics simulation to determine node relationships:
-
-### Attraction Forces
-- Nodes are attracted to the center based on trait compatibility
-- Compatibility is calculated using the difference between central preferences and node attributes
-- Higher compatibility = stronger attraction
-
-### Repulsion Forces
-- Nodes repel each other based on trait dissimilarity
-- Similar nodes stay closer together
-- Dissimilar nodes push each other away
-
-### Damping
-- Velocity damping prevents infinite acceleration
-- Creates natural, stable movement patterns
-
-## Customization
-
-### Styling
-The library uses CSS custom properties for easy theming:
-
-```scss
-:host {
-  --neon-purple: #C300FF;
-  --neon-pink: #FF3366;
-  --neon-cyan: #00FFFF;
-  --neon-blue: #0080FF;
-  --dark-bg: #0A0A0A;
-  --card-bg: rgba(20, 20, 20, 0.8);
-  --glass-bg: rgba(255, 255, 255, 0.05);
-  --text-primary: #FFFFFF;
-  --text-secondary: rgba(255, 255, 255, 0.7);
-}
-```
-
-### Radial UI Elements
-The radial UI elements can be customized by modifying the `nodeData` array in the main component:
-
-```typescript
-nodeData = [
-  { id: 'biology', name: 'Programmable Biology', description: '...' },
-  { id: 'web3', name: 'Scenius Web3', description: '...' },
-  // Add more elements as needed
-];
-```
-
-## Development
-
-### Running the Application
-
-```bash
-npm start
-```
-
-The application will be available at `http://localhost:4200`.
-
-### Building for Production
+### Production Build
 
 ```bash
 npm run build
 ```
 
-## API Reference
+The built files will be in the `dist/` directory.
 
-### Events
+## 🎮 How to Use
 
-- `nodeSelected`: Emitted when a node is clicked
-- `configChanged`: Emitted when configuration is updated
+### Camera Controls
 
-### Methods
+1. **Open Camera Menu**: Click the camera button (📷) in the top-right corner
+2. **Select View**: Choose from the radial menu:
+   - 🎮 **Free View**: Mouse controls enabled
+   - ⬆️ **Top View**: Bird's eye perspective
+   - 👁️ **Front View**: Direct front view
+   - ↔️ **Side View**: Side perspective
+   - 📐 **Isometric**: 3D diagonal view
+   - 🔍 **Close Up**: Zoomed detail view
 
-- `updateConfig(newConfig: Partial<GalaxyConfig>)`: Update configuration
-- `showTooltip(x, y, title, content)`: Show tooltip at coordinates
-- `hideTooltip()`: Hide current tooltip
+### Node Interactions
 
-## Browser Support
+- **Drag Nodes**: Click and drag any node to move it
+- **Hover Info**: Hover over nodes to see compatibility and attributes
+- **Select Central**: Right-click any node to make it the central node
+- **Edit Attributes**: Ctrl+Click to select for attribute editing
 
-- Chrome 60+
-- Firefox 55+
-- Safari 12+
-- Edge 79+
+### Control Panel
 
-## License
+Access the control panel to modify:
 
-MIT License - see LICENSE file for details.
+#### Basic Settings
+- **Number of Nodes**: 3-20 nodes
+- **Number of Attributes**: 3-10 attributes per node
+- **Physics Forces**: Attraction and repulsion strength
+- **Damping**: Movement damping factor
 
-## Contributing
+#### Node Management
+- **Central Node Selection**: Choose which node is central
+- **Central Preferences**: Set the central node's attribute values
+- **Attribute Management**: Add, remove, or rename attributes
+
+#### Advanced Features
+- **Force Equilibrium**: Instantly move nodes to calculated positions
+- **Generate Diverse Test**: Create varied node configurations
+- **Reset to Defaults**: Restore original settings
+
+### Attribute Management
+
+#### Adding Attributes
+1. Click "Add Attribute" button
+2. Enter attribute name (max 30 characters)
+3. Attribute appears with default value of 50
+
+#### Editing Attributes
+1. Select a node from the dropdown
+2. Choose an attribute to edit
+3. Use slider or number input to change value
+4. Changes apply immediately
+
+#### Removing Attributes
+1. Select an attribute from the dropdown
+2. Click "Remove" button
+3. Confirm deletion (cannot be undone)
+
+## 🔧 Console Commands
+
+For debugging and advanced control, use these browser console commands:
+
+### Camera Testing
+```javascript
+// Test specific camera view
+testCameraViewFromConsole('top')
+testCameraViewFromConsole('front')
+testCameraViewFromConsole('side')
+testCameraViewFromConsole('iso')
+testCameraViewFromConsole('close')
+testCameraViewFromConsole('free')
+
+// Test all views automatically (2-second intervals)
+testAllCameraViews()
+
+// Direct camera control
+testCamera('iso')
+```
+
+### Service Access
+```javascript
+// Access camera service
+cameraService.getCurrentView()
+cameraService.getCameraViews()
+
+// Debug radial menu
+debugRadialMenu()
+```
+
+## 📁 Project Structure
+
+```
+spline-app/
+├── src/
+│   ├── app/
+│   │   ├── components/
+│   │   │   ├── camera-view-control/     # Camera control UI
+│   │   │   ├── galaxy-traits-library/   # Traits library component
+│   │   │   └── spline-view/            # Main 3D visualization
+│   │   ├── services/
+│   │   │   ├── camera-view.service.ts   # Camera management
+│   │   │   ├── node.service.ts         # Node data management
+│   │   │   ├── physics.service.ts      # Physics calculations
+│   │   │   └── spline-scene.service.ts # 3D scene management
+│   │   ├── interfaces/
+│   │   │   └── node.interface.ts       # TypeScript interfaces
+│   │   └── data/
+│   │       └── mock-data.ts            # Sample data generation
+│   ├── Models/                         # 3D model assets
+│   └── styles.scss                     # Global styles
+├── public/                             # Static assets
+└── README.md                          # This file
+```
+
+## 🔄 Core Components
+
+### SplineViewComponent
+Main visualization component that:
+- Initializes Three.js scene
+- Manages node positioning and physics
+- Handles user interactions
+- Renders particle effects
+
+### CameraViewControlComponent
+Camera control interface that:
+- Provides radial menu for view selection
+- Manages camera state
+- Handles smooth transitions
+
+### Services
+
+#### CameraViewService
+- Manages camera positions and states
+- Handles view transitions
+- Provides camera configuration
+
+#### NodeService
+- Manages node data and relationships
+- Handles attribute updates
+- Calculates compatibility scores
+
+#### PhysicsService
+- Computes node positioning
+- Handles physics simulations
+- Manages equilibrium calculations
+
+## ⚡ Performance Features
+
+- **Optimized Rendering**: Reduced polygon counts and efficient materials
+- **Selective Updates**: Only updates changed elements
+- **Performance Monitoring**: Real-time FPS and memory tracking
+- **Responsive Particle System**: Adaptive particle count based on performance
+- **Efficient Physics**: Equilibrium-based positioning reduces calculations
+
+## 🎨 Customization
+
+### Adding New Camera Views
+
+1. **Update CameraViewService**:
+```typescript
+   private readonly cameraViews: CameraView[] = [
+     // ... existing views
+     {
+       id: 'custom',
+       name: 'Custom View',
+       icon: '🎯',
+       position: { x: 50, y: 50, z: 50 },
+       target: { x: 0, y: 0, z: 0 },
+       isFree: false,
+       description: 'Custom camera view'
+     }
+];
+```
+
+### Modifying Physics Parameters
+
+Adjust physics in `PhysicsService`:
+```typescript
+// Attraction force
+attractionK: 100
+
+// Repulsion force  
+repulsionK: 20
+
+// Movement damping
+damping: 0.98
+```
+
+### Styling Customization
+
+Main styles are in:
+- `spline-view.component.scss` - 3D visualization styles
+- `camera-view-control.component.ts` - Camera UI styles
+- `styles.scss` - Global styles
+
+## 🐛 Troubleshooting
+
+### Common Issues
+
+1. **Camera not responding**
+   - Check browser console for errors
+   - Try `testCamera('free')` in console
+   - Refresh the page
+
+2. **Performance issues**
+   - Reduce number of nodes
+   - Disable particles if needed
+   - Check browser hardware acceleration
+
+3. **Nodes not moving**
+   - Click "Force Move to Equilibrium"
+   - Try changing central node
+   - Reset to defaults
+
+### Debug Commands
+
+```javascript
+// Check camera state
+cameraService.getCurrentView()
+
+// Test camera functionality
+testAllCameraViews()
+
+// Check node data
+// Available through component inspection
+```
+
+## 📊 Performance Guidelines
+
+### Recommended Settings
+- **Nodes**: 5-15 for optimal performance
+- **Attributes**: 3-8 for best user experience
+- **Particles**: Auto-adjusted based on performance
+
+### Browser Compatibility
+- Chrome 90+ (Recommended)
+- Firefox 88+
+- Safari 14+
+- Edge 90+
+
+## 🤝 Contributing
 
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Add tests if applicable
+4. Test thoroughly
 5. Submit a pull request
 
-## Support
+## 📄 License
 
-For issues and questions, please open an issue on GitHub.
+This project is licensed under the MIT License.
+
+## 🆘 Support
+
+For issues and questions:
+1. Check the troubleshooting section
+2. Use browser console commands for debugging
+3. Review component documentation
+4. Open an issue on the repository
+
+---
+
+## 🎯 Quick Start Summary
+
+1. **Install**: `npm install`
+2. **Run**: `npm start`
+3. **Open**: `http://localhost:4200`
+4. **Explore**: Click the camera button and try different views!
+
+Enjoy exploring your 3D Galaxy! 🌌✨

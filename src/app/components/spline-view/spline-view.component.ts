@@ -5,13 +5,15 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { PhysicsService } from '../../services/physics.service';
 import { NodeService } from '../../services/node.service';
+import { CameraViewService } from '../../services/camera-view.service';
 import { MockDataService } from '../../data/mock-data';
 import { Node, NodeConfig, PhysicsConfig, TooltipData } from '../../interfaces/node.interface';
+import { CameraViewControlComponent } from '../camera-view-control/camera-view-control.component';
 
 @Component({
   selector: 'app-spline-view',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, CameraViewControlComponent],
   templateUrl: './spline-view.component.html',
   styleUrls: ['./spline-view.component.scss']
 })
@@ -40,10 +42,15 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
   // Node management
   selectedCentralNodeId = signal<string>('central');
   attributeNames = signal<string[]>(['Intelligence', 'Creativity', 'Empathy']);
+  centralNodeColor = signal<string>('#C300FF');
   
   // Attribute management dropdowns
   selectedNodeForAttributes = signal<string>('');
   selectedAttributeForEdit = signal<number>(-1);
+  
+  // Node name editing
+  selectedNodeForNameEdit = signal<string>('');
+  newNodeName = signal<string>('');
 
   // Performance monitoring
   fps = signal<number>(60);
@@ -64,6 +71,7 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
   private mouse = new THREE.Vector2();
   private dragging = false;
   private dragged?: THREE.Object3D | null;
+  private dragBoundary?: THREE.Mesh;
 
   private centralSphere?: THREE.Mesh;
   nodeSpheres: THREE.Mesh[] = [];
@@ -84,9 +92,24 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
   private lastTime = 0;
   private fpsUpdateInterval = 0;
 
+  // Color presets for central node
+  colorPresets = [
+    { name: 'Neon Purple', color: '#C300FF' },
+    { name: 'Neon Pink', color: '#FF3366' },
+    { name: 'Neon Cyan', color: '#00FFFF' },
+    { name: 'Neon Blue', color: '#0080FF' },
+    { name: 'Electric Green', color: '#00FF00' },
+    { name: 'Sunset Orange', color: '#FF6600' },
+    { name: 'Hot Pink', color: '#FF1493' },
+    { name: 'Electric Yellow', color: '#FFFF00' },
+    { name: 'Deep Red', color: '#FF0000' },
+    { name: 'Royal Purple', color: '#9932CC' }
+  ];
+
   constructor(
     private physicsService: PhysicsService,
-    private nodeService: NodeService
+    private nodeService: NodeService,
+    private cameraViewService: CameraViewService
   ) {}
 
   ngOnInit(): void {
@@ -102,6 +125,44 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
     this.resetNodes();
     this.start();
     this.startPerformanceMonitoring();
+    
+    // Make camera service available for debugging
+    (window as any).testCamera = (viewId: string) => {
+      if (this.camera && this.controls) {
+        console.log('Testing camera view from console:', viewId);
+        this.cameraViewService.applyCameraView(this.camera, this.controls, viewId);
+      } else {
+        console.log('Camera or controls not ready');
+      }
+    };
+
+    // Make camera service available globally for debugging
+    (window as any).cameraService = this.cameraViewService;
+    (window as any).cameraViews = this.cameraViewService.getCameraViews();
+    
+    // Add test functions
+    (window as any).testAllCameraViews = () => {
+      console.log('Testing all camera views from console...');
+      const views = ['free', 'top', 'front', 'side', 'iso', 'close'];
+      views.forEach((viewId, index) => {
+        setTimeout(() => {
+          console.log(`Testing ${viewId}...`);
+          this.cameraViewService.setCurrentView(viewId);
+        }, index * 2000);
+      });
+    };
+    
+    (window as any).testCameraViewFromConsole = (viewId: string) => {
+      console.log(`Testing ${viewId} from console...`);
+      this.cameraViewService.setCurrentView(viewId);
+    };
+    
+    // Add debug function for radial menu
+    (window as any).debugRadialMenu = () => {
+      console.log('=== RADIAL MENU DEBUG ===');
+      console.log('Camera service available:', !!this.cameraViewService);
+      console.log('Views available:', this.cameraViewService.getCameraViews());
+    };
   }
 
   private loadInitialData(): void {
@@ -141,6 +202,23 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
     // Subscribe to central node updates
     this.nodeService.centralNode$.subscribe(centralNode => {
       this.centralNode = centralNode;
+    });
+
+    // Note: Camera view subscription will be set up after Three.js initialization
+  }
+
+  private setupCameraViewSubscription(): void {
+    console.log('Setting up camera view subscription - Camera exists:', !!this.camera, 'Controls exist:', !!this.controls);
+    
+    // Subscribe to camera view changes
+    this.cameraViewService.currentView$.subscribe(viewId => {
+      console.log('Camera view changed to:', viewId, 'Camera exists:', !!this.camera, 'Controls exist:', !!this.controls);
+      if (this.camera && this.controls) {
+        console.log('Applying camera view:', viewId);
+        this.cameraViewService.applyCameraView(this.camera, this.controls, viewId);
+      } else {
+        console.log('Camera or controls not ready yet');
+      }
     });
   }
 
@@ -184,7 +262,7 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
 
     console.log('Updating Three.js visualization with', this.nodes.length, 'nodes');
 
-    // Clear existing spheres completely
+    // Clear existing spheres and labels completely
     for (const sphere of this.nodeSpheres) {
       this.scene.remove(sphere);
       // Dispose of geometry and material to prevent memory leaks
@@ -197,6 +275,21 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
         }
       }
     }
+    
+    // Clear existing text labels
+    const labelsToRemove = this.scene.children.filter(child => (child as any).isNodeLabel);
+    labelsToRemove.forEach(label => {
+      if (label && this.scene) {
+        this.scene.remove(label);
+        const sprite = label as THREE.Sprite;
+        if (sprite.material) {
+          if ((sprite.material as THREE.SpriteMaterial).map) {
+            (sprite.material as THREE.SpriteMaterial).map?.dispose();
+          }
+          sprite.material.dispose();
+        }
+      }
+    });
     
     // Clear central sphere
     if (this.centralSphere) {
@@ -235,7 +328,29 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
       (mesh as any).isNode = true;
       (mesh as any).isCentral = node.isCentral;
 
+      // Create text label above the node
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d')!;
+      canvas.width = 512;
+      canvas.height = 128;
+      
+      context.font = 'Bold 48px Arial, sans-serif';
+      context.fillStyle = 'white';
+      context.textAlign = 'center';
+      context.fillText(node.name, canvas.width / 2, canvas.height / 2 + 8);
+      
+      const texture = new THREE.CanvasTexture(canvas);
+      const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+      const sprite = new THREE.Sprite(spriteMaterial);
+      
+      // Position text above the node
+      sprite.position.set(node.position.x, node.position.y + node.radius + 1.5, node.position.z);
+      sprite.scale.set(8, 2, 1); // Make text double large size
+      (sprite as any).nodeId = node.id;
+      (sprite as any).isNodeLabel = true;
+
       this.scene.add(mesh);
+      this.scene.add(sprite);
 
       if (node.isCentral) {
         this.centralSphere = mesh;
@@ -279,6 +394,16 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
     this.controls = new OrbitControls(this.camera, canvas);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
+    this.controls.enableRotate = true;
+    this.controls.enablePan = true;
+    this.controls.enableZoom = true;
+    this.controls.enabled = true;
+
+    // Apply initial camera view after camera and controls are initialized
+    this.cameraViewService.applyCameraView(this.camera, this.controls, 'free');
+
+    // Set up camera view subscription now that camera and controls are ready
+    this.setupCameraViewSubscription();
 
     window.addEventListener('resize', () => this.onResize());
     canvas.addEventListener('mousemove', (e: MouseEvent) => this.onMouseMove(e));
@@ -310,8 +435,14 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
 
     // Generate new nodes using the service
     MockDataService.generateRandomNodes(config).subscribe(nodes => {
+      // Apply current central node color to the generated central node
+      const centralNode = nodes.find(n => n.isCentral);
+      if (centralNode) {
+        centralNode.color = this.centralNodeColor();
+      }
+      
       this.nodeService.nodesSubject.next(nodes);
-      this.nodeService.centralNodeSubject.next(nodes.find(n => n.isCentral) || null);
+      this.nodeService.centralNodeSubject.next(centralNode || null);
     });
   }
 
@@ -349,6 +480,96 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
     this.centralPreferences.set(parts);
     // Clear equilibrium positions to trigger recalculation with new preferences
     // Continuous physics will automatically respond to changes
+  }
+
+  onCentralNodeColorChange(color: string): void {
+    console.log('Central node color changed to:', color);
+    this.centralNodeColor.set(color);
+    
+    // Update the central node color in the Three.js scene
+    this.updateCentralNodeColor(color);
+    
+    // Also update the node data
+    const centralNode = this.nodes.find(node => node.isCentral);
+    if (centralNode) {
+      centralNode.color = color;
+    }
+  }
+
+  // Node Name Editing Methods
+  onNodeForNameEditChange(nodeId: string): void {
+    this.selectedNodeForNameEdit.set(nodeId);
+    
+    // Pre-fill the input with current name when selecting a node
+    if (nodeId) {
+      const node = this.nodes.find(n => n.id === nodeId);
+      this.newNodeName.set(node?.name || '');
+    } else {
+      this.newNodeName.set('');
+    }
+  }
+
+  getSelectedNodeForNameEdit(): Node | undefined {
+    const nodeId = this.selectedNodeForNameEdit();
+    return nodeId ? this.nodes.find(n => n.id === nodeId) : undefined;
+  }
+
+  updateNodeName(): void {
+    const nodeId = this.selectedNodeForNameEdit();
+    const newName = this.newNodeName().trim();
+    
+    if (!nodeId || !newName) {
+      console.warn('Cannot update node name: missing nodeId or name');
+      return;
+    }
+
+    const node = this.nodes.find(n => n.id === nodeId);
+    if (!node) {
+      console.warn('Node not found for name update:', nodeId);
+      return;
+    }
+
+    const oldName = node.name;
+    
+    // Update the node name
+    node.name = newName;
+    console.log(`Node name updated: "${oldName}" → "${newName}"`);
+    
+    // Update the node service
+    this.nodeService.updateNode(nodeId, { name: newName });
+    
+    // Update the Three.js text label
+    this.updateNodeTextLabel(nodeId, newName);
+    
+    // Store original name if not already stored
+    if (!(node as any).originalName) {
+      (node as any).originalName = oldName;
+    }
+  }
+
+  resetNodeNameToOriginal(): void {
+    const nodeId = this.selectedNodeForNameEdit();
+    if (!nodeId) return;
+    
+    const node = this.nodes.find(n => n.id === nodeId);
+    if (!node) return;
+    
+    const originalName = (node as any).originalName || node.name;
+    this.newNodeName.set(originalName);
+    this.updateNodeName();
+  }
+
+  generateRandomName(): void {
+    const randomNames = [
+      'Alexander Stone', 'Victoria Cross', 'Marcus Hill', 'Sophia Rivers',
+      'Daniel Woods', 'Isabella Knight', 'Oliver Park', 'Charlotte Reed',
+      'Samuel Brooks', 'Emily Grant', 'Lucas Fox', 'Grace Hunter',
+      'Benjamin Cole', 'Aria Wells', 'Ryan Shaw', 'Luna Pierce',
+      'Noah Blake', 'Zoe Clarke', 'Ethan Ward', 'Maya Sterling'
+    ];
+    
+    const randomName = randomNames[Math.floor(Math.random() * randomNames.length)];
+    this.newNodeName.set(randomName);
   }
 
   onCentralNodeChange(nodeId: string): void {
@@ -980,6 +1201,8 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
         // Central node stays at center
         if (node && node.isCentral) {
           mesh.position.set(0, 0, 0);
+          // Update central node label position
+          this.updateNodeLabelPosition(nodeId, mesh.position, node.radius);
         }
         continue;
       }
@@ -1001,6 +1224,9 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
           
           mesh.position.add(direction.multiplyScalar(moveDistance));
           
+          // Update text label position
+          this.updateNodeLabelPosition(nodeId, mesh.position, node.radius);
+          
           // Update service with new position
           this.nodeService.updateNodePosition(nodeId, {
             x: mesh.position.x,
@@ -1013,6 +1239,125 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
 
     this.animateParticles(dt);
     this.frameCount++;
+  }
+
+  private updateNodeLabelPosition(nodeId: string, nodePosition: THREE.Vector3, nodeRadius: number): void {
+    if (!this.scene) return;
+    
+    // Find the text label for this node
+    const label = this.scene.children.find(child => 
+      (child as any).isNodeLabel && (child as any).nodeId === nodeId
+    ) as THREE.Sprite;
+    
+    if (label) {
+      label.position.set(
+        nodePosition.x, 
+        nodePosition.y + nodeRadius + 1.5, 
+        nodePosition.z
+      );
+    }
+  }
+
+  private updateCentralNodeColor(color: string): void {
+    if (!this.scene) return;
+    
+    console.log('Updating central node color to:', color);
+    
+    // Find the central node mesh in the scene
+    const centralMesh = this.nodeSpheres.find(mesh => {
+      const nodeId = (mesh as any).nodeId;
+      const node = this.nodes.find(n => n.id === nodeId);
+      return node?.isCentral;
+    });
+    
+    if (centralMesh && centralMesh.material) {
+      // Update the material color
+      const material = centralMesh.material as THREE.MeshBasicMaterial;
+      material.color.setHex(parseInt(color.replace('#', ''), 16));
+      
+      console.log('Central node color updated successfully');
+    } else {
+      console.warn('Central node mesh not found for color update');
+    }
+  }
+
+  private updateNodeTextLabel(nodeId: string, newName: string): void {
+    if (!this.scene) return;
+    
+    console.log(`Updating text label for node ${nodeId} to: "${newName}"`);
+    
+    // Find the text label for this node
+    const label = this.scene.children.find(child => 
+      (child as any).isNodeLabel && (child as any).nodeId === nodeId
+    ) as THREE.Sprite;
+    
+    if (label) {
+      // Create new canvas with updated text
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d')!;
+      canvas.width = 512;
+      canvas.height = 128;
+
+      context.font = 'Bold 48px Arial, sans-serif';
+      context.fillStyle = 'white';
+      context.textAlign = 'center';
+      context.fillText(newName, canvas.width / 2, canvas.height / 2 + 8);
+
+      // Dispose of old texture
+      const oldMaterial = label.material as THREE.SpriteMaterial;
+      if (oldMaterial.map) {
+        oldMaterial.map.dispose();
+      }
+      
+      // Create new texture and update material
+      const texture = new THREE.CanvasTexture(canvas);
+      oldMaterial.map = texture;
+      oldMaterial.needsUpdate = true;
+      
+      console.log(`Text label updated for node ${nodeId}`);
+    } else {
+      console.warn(`Text label not found for node ${nodeId}`);
+    }
+  }
+
+  private applyDragConstraints(position: THREE.Vector3): THREE.Vector3 {
+    const constrainedPos = position.clone();
+    
+    // Define constraint boundaries
+    const maxDistanceFromCenter = 80;  // Maximum distance from origin
+    const maxY = 40;  // Maximum Y distance (up/down)
+    const minY = -40; // Minimum Y distance
+    
+    // Apply spherical boundary constraint (distance from center)
+    const distanceFromCenter = constrainedPos.length();
+    if (distanceFromCenter > maxDistanceFromCenter) {
+      constrainedPos.normalize().multiplyScalar(maxDistanceFromCenter);
+    }
+    
+    // Apply Y-axis constraints (prevent nodes from going too high or low)
+    constrainedPos.y = Math.max(minY, Math.min(maxY, constrainedPos.y));
+    
+    // For central node, apply tighter constraints
+    if (this.dragged && (this.dragged as any).nodeId) {
+      const nodeId = (this.dragged as any).nodeId;
+      const node = this.nodes.find(n => n.id === nodeId);
+      
+      if (node?.isCentral) {
+        // Central node has tighter constraints
+        const centralMaxDistance = 30;
+        const centralMaxY = 20;
+        const centralMinY = -20;
+        
+        const centralDistance = constrainedPos.length();
+        if (centralDistance > centralMaxDistance) {
+          constrainedPos.normalize().multiplyScalar(centralMaxDistance);
+        }
+        
+        constrainedPos.y = Math.max(centralMinY, Math.min(centralMaxY, constrainedPos.y));
+      }
+    }
+    
+    return constrainedPos;
   }
 
   private calculateEquilibriumPositions(): void {
@@ -1239,19 +1584,39 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
     this.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
     
     if (this.dragging && this.dragged && this.camera) {
-      const depth = 200;
-      const vector = new THREE.Vector3(this.mouse.x, this.mouse.y, 0.5).unproject(this.camera);
-      const dir = vector.sub(this.camera.position).normalize();
-      const pos = this.camera.position.clone().add(dir.multiplyScalar(depth));
-      this.dragged.position.copy(pos);
+      // Calculate new position with improved depth and projection
+      const vector = new THREE.Vector3(this.mouse.x, this.mouse.y, 0.5);
+      vector.unproject(this.camera);
+      
+      // Get direction from camera to mouse position
+      const direction = vector.sub(this.camera.position).normalize();
+      
+      // Use current object distance from camera for better depth perception
+      const currentDistance = this.camera.position.distanceTo(this.dragged.position);
+      const targetDistance = Math.min(Math.max(currentDistance, 20), 100); // Keep reasonable distance range
+      
+      // Calculate new position
+      const newPos = this.camera.position.clone().add(direction.multiplyScalar(targetDistance));
+      
+      // Apply drag constraints to keep nodes within reasonable bounds
+      const constrainedPos = this.applyDragConstraints(newPos);
+      
+      // Apply the constrained position
+      this.dragged.position.copy(constrainedPos);
       
       // Update node position in service and reset velocity for force recalculation
       const nodeId = (this.dragged as any).nodeId;
       if (nodeId) {
+        const node = this.nodes.find(n => n.id === nodeId);
+        if (node) {
+          // Update text label position while dragging
+          this.updateNodeLabelPosition(nodeId, constrainedPos, node.radius);
+        }
+        
         this.nodeService.updateNodePosition(nodeId, {
-          x: pos.x,
-          y: pos.y,
-          z: pos.z
+          x: constrainedPos.x,
+          y: constrainedPos.y,
+          z: constrainedPos.z
         });
         
         // Reset velocity to trigger force recalculation
@@ -1334,6 +1699,7 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
         } else {
           this.dragging = true;
           this.dragged = obj;
+          this.showDragBoundary(nodeId);
         }
       } else if (e.button === 2) { // Right click - set as central node
         e.preventDefault();
@@ -1345,8 +1711,58 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
   private onMouseUp(): void {
     this.dragging = false;
     this.dragged = null;
+    this.hideDragBoundary();
     // When dragging stops, nodes will automatically return to equilibrium positions
     // due to the stepPhysics method checking for distance from equilibrium
+  }
+
+  private showDragBoundary(nodeId: string): void {
+    if (!this.scene) return;
+    
+    // Remove existing boundary if any
+    this.hideDragBoundary();
+    
+    // Determine boundary size based on node type
+    const node = this.nodes.find(n => n.id === nodeId);
+    const isCentral = node?.isCentral;
+    const boundaryRadius = isCentral ? 30 : 80;
+    
+    // Create wireframe sphere to show drag boundary
+    const geometry = new THREE.SphereGeometry(boundaryRadius, 24, 16);
+    const material = new THREE.MeshBasicMaterial({
+      color: isCentral ? 0x9932CC : 0x444444,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.2
+    });
+    
+    this.dragBoundary = new THREE.Mesh(geometry, material);
+    this.dragBoundary.position.set(0, 0, 0);
+    (this.dragBoundary as any).isDragBoundary = true;
+    
+    this.scene.add(this.dragBoundary);
+    
+    console.log(`Showing drag boundary (radius: ${boundaryRadius}) for ${isCentral ? 'central' : 'outer'} node`);
+  }
+
+  private hideDragBoundary(): void {
+    if (this.dragBoundary && this.scene) {
+      this.scene.remove(this.dragBoundary);
+      
+      // Dispose geometry and material to prevent memory leaks
+      if (this.dragBoundary.geometry) {
+        this.dragBoundary.geometry.dispose();
+      }
+      if (this.dragBoundary.material) {
+        if (Array.isArray(this.dragBoundary.material)) {
+          this.dragBoundary.material.forEach(mat => mat.dispose());
+        } else {
+          this.dragBoundary.material.dispose();
+        }
+      }
+      
+      this.dragBoundary = undefined;
+    }
   }
 
 

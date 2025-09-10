@@ -125,6 +125,10 @@ export class NodeService {
     this.updateNode(nodeId, { velocity });
   }
 
+  updateNodeName(nodeId: string, name: string): void {
+    this.updateNode(nodeId, { name });
+  }
+
   getNode(nodeId: string): Node | undefined {
     return this.nodesSubject.value.find(n => n.id === nodeId);
   }

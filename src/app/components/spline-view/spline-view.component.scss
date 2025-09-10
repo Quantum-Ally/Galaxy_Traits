@@ -10,10 +10,14 @@
   --text-secondary: rgba(255, 255, 255, 0.7);
   
   display: block;
-  position: relative;
-  width: 100%;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
   height: 100vh;
   overflow: hidden;
+  margin: 0;
+  padding: 0;
 }
 
 .radial-ui {
@@ -243,6 +247,197 @@
       color: var(--neon-purple);
       font-weight: 600;
       font-size: 12px;
+    }
+    
+    // Color Control Styles
+    .color-control {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      
+      .color-picker {
+        width: 100%;
+        height: 40px;
+        border: 2px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        background: transparent;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        
+        &:hover {
+          border-color: var(--neon-purple);
+          box-shadow: 0 0 10px rgba(195, 0, 255, 0.3);
+        }
+        
+        &::-webkit-color-swatch-wrapper {
+          padding: 0;
+          border-radius: 6px;
+          overflow: hidden;
+        }
+        
+        &::-webkit-color-swatch {
+          border: none;
+          border-radius: 6px;
+        }
+      }
+      
+      .color-presets {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        
+        .color-preset-btn {
+          width: 32px;
+          height: 32px;
+          border: 2px solid rgba(255, 255, 255, 0.2);
+          border-radius: 50%;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          position: relative;
+          
+          &:hover {
+            transform: scale(1.1);
+            border-color: rgba(255, 255, 255, 0.5);
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.3);
+          }
+          
+          &:active {
+            transform: scale(0.95);
+          }
+        }
+      }
+      
+      .current-color-value {
+        color: var(--text-secondary);
+        font-size: 11px;
+        font-family: 'Courier New', monospace;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        text-align: center;
+        padding: 4px 8px;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 4px;
+      }
+    }
+    
+    // Node Name Editor Styles
+    .node-name-editor {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      
+      .name-edit-dropdown {
+        label {
+          display: block;
+          color: var(--text-secondary);
+          font-size: 11px;
+          font-weight: 500;
+          margin-bottom: 6px;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+        
+        .neomorphic-select {
+          width: 100%;
+          padding: 8px 12px;
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 8px;
+          color: var(--text-primary);
+          font-size: 14px;
+          transition: all 0.3s ease;
+          
+          &:focus {
+            outline: none;
+            border-color: var(--neon-purple);
+            box-shadow: 0 0 10px rgba(195, 0, 255, 0.3);
+          }
+          
+          &:hover {
+            border-color: rgba(255, 255, 255, 0.2);
+          }
+        }
+      }
+      
+      .name-input-group {
+        label {
+          display: block;
+          color: var(--text-secondary);
+          font-size: 11px;
+          font-weight: 500;
+          margin-bottom: 6px;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+        
+        .name-input-controls {
+          display: flex;
+          gap: 8px;
+          align-items: center;
+          
+          .text-input {
+            flex: 1;
+            padding: 8px 12px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 14px;
+            transition: all 0.3s ease;
+            
+            &:focus {
+              outline: none;
+              border-color: var(--neon-purple);
+              box-shadow: 0 0 10px rgba(195, 0, 255, 0.3);
+            }
+            
+            &::placeholder {
+              color: rgba(255, 255, 255, 0.4);
+            }
+          }
+          
+          .neomorphic-btn.small {
+            padding: 8px 12px;
+            font-size: 12px;
+            min-width: auto;
+            white-space: nowrap;
+            
+            &:disabled {
+              opacity: 0.5;
+              cursor: not-allowed;
+              background: rgba(255, 255, 255, 0.02);
+            }
+          }
+        }
+        
+        .current-name-display {
+          margin-top: 6px;
+          padding: 6px 10px;
+          background: rgba(255, 255, 255, 0.03);
+          border: 1px solid rgba(255, 255, 255, 0.05);
+          border-radius: 6px;
+          color: var(--text-secondary);
+          font-size: 12px;
+          font-style: italic;
+        }
+      }
+      
+      .name-edit-actions {
+        display: flex;
+        gap: 8px;
+        
+        .neomorphic-btn.small {
+          flex: 1;
+          padding: 8px 12px;
+          font-size: 12px;
+          text-align: center;
+          
+          &:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(195, 0, 255, 0.2);
+          }
+        }
+      }
     }
   }
 
@@ -485,9 +680,13 @@
 }
 
 .canvas-container {
-  position: relative;
-  width: 100%;
-  height: 100%;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
   
   .three-canvas,
   .spline-canvas {
@@ -497,6 +696,8 @@
     width: 100%;
     height: 100%;
     display: block;
+    margin: 0;
+    padding: 0;
   }
   
   .three-canvas {
