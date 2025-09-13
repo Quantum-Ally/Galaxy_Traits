@@ -101,7 +101,7 @@
     <div class="control-group">
       <label>Central Node Color</label>
       <div class="color-control">
-        <input type="color" [ngModel]="centralNodeColor()" (ngModelChange)="onCentralNodeColorChange($event)" class="color-picker">
+        <input type="color" [ngModel]="centralNodeColor() || '#C300FF'" (ngModelChange)="onCentralNodeColorChange($event)" class="color-picker">
         <div class="color-presets">
           <button *ngFor="let preset of colorPresets" 
                   class="color-preset-btn" 

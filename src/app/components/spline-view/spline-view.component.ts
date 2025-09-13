@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { PhysicsService } from '../../services/physics.service';
 import { NodeService } from '../../services/node.service';
 import { CameraViewService } from '../../services/camera-view.service';
@@ -31,6 +32,7 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
   // UI State
   showControls = signal<boolean>(true);
   audioEnabled = signal<boolean>(false);
+  is2DMode = signal<boolean>(false);
   tooltip = signal<TooltipData>({
     visible: false,
     x: 0,
@@ -71,7 +73,18 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
   private mouse = new THREE.Vector2();
   private dragging = false;
   private dragged?: THREE.Object3D | null;
-  private dragBoundary?: THREE.Mesh;
+  private gltfLoader = new GLTFLoader();
+  private spaceModel?: THREE.Group;
+  private spaceModelParticles: THREE.Mesh[] = [];
+  private spaceModelOriginalPositions: Map<THREE.Mesh, Float32Array> = new Map();
+  private currentCameraView = 'free';
+  private centralNodeShadow?: THREE.Mesh;
+  
+  // Repulsion effect parameters
+  private repulsionRadius = 50; // Distance at which repulsion starts (much larger 3D clear area)
+  private repulsionStrength = 3.0; // How strong the repulsion force is (very strong pushing)
+  private repulsionFalloff = 1.0; // How quickly repulsion decreases with distance (linear falloff)
+  private minDistance = 25; // Minimum distance from central node (large 3D clear sphere)
 
   private centralSphere?: THREE.Mesh;
   nodeSpheres: THREE.Mesh[] = [];
@@ -121,6 +134,7 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
     // Avoid SSR accessing DOM
     if (typeof window === 'undefined') return;
     this.initThree();
+    this.loadSpaceModel();
     this.createParticleSystem();
     this.resetNodes();
     this.start();
@@ -213,6 +227,8 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
     // Subscribe to camera view changes
     this.cameraViewService.currentView$.subscribe(viewId => {
       console.log('Camera view changed to:', viewId, 'Camera exists:', !!this.camera, 'Controls exist:', !!this.controls);
+      this.currentCameraView = viewId; // Track current view for 2D constraints
+      this.is2DMode.set(viewId === 'top'); // Update 2D mode signal
       if (this.camera && this.controls) {
         console.log('Applying camera view:', viewId);
         this.cameraViewService.applyCameraView(this.camera, this.controls, viewId);
@@ -227,6 +243,26 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.fpsUpdateInterval) clearInterval(this.fpsUpdateInterval);
     this.controls?.dispose();
     this.renderer?.dispose();
+    
+    // Clean up space model
+    if (this.spaceModel && this.scene) {
+      this.scene.remove(this.spaceModel);
+      this.spaceModel.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) {
+            if (Array.isArray(child.material)) {
+              child.material.forEach(mat => mat.dispose());
+            } else {
+              child.material.dispose();
+            }
+          }
+        }
+      });
+    }
+    
+    // Clean up central node shadow
+    this.removeCentralNodeShadow();
   }
 
   private startPerformanceMonitoring(): void {
@@ -355,6 +391,9 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
       if (node.isCentral) {
         this.centralSphere = mesh;
         console.log('Central node set to:', node.id, 'at position:', node.position);
+        
+        // Create shadow effect for central node
+        this.createCentralNodeShadow();
       }
       
       // Add all nodes to nodeSpheres for physics calculations and interactions
@@ -599,6 +638,40 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
     this.audioEnabled.set(!this.audioEnabled());
   }
 
+  getIs2DMode(): boolean {
+    return this.is2DMode();
+  }
+
+  // Repulsion effect control methods
+  setRepulsionRadius(radius: number): void {
+    this.repulsionRadius = Math.max(1, Math.min(50, radius));
+    console.log(`Repulsion radius set to: ${this.repulsionRadius}`);
+  }
+
+  setRepulsionStrength(strength: number): void {
+    this.repulsionStrength = Math.max(0.01, Math.min(2.0, strength));
+    console.log(`Repulsion strength set to: ${this.repulsionStrength}`);
+  }
+
+  setRepulsionFalloff(falloff: number): void {
+    this.repulsionFalloff = Math.max(0.5, Math.min(5.0, falloff));
+    console.log(`Repulsion falloff set to: ${this.repulsionFalloff}`);
+  }
+
+  setMinDistance(distance: number): void {
+    this.minDistance = Math.max(1, Math.min(20, distance));
+    console.log(`Minimum distance set to: ${this.minDistance}`);
+  }
+
+  getRepulsionParameters(): { radius: number; strength: number; falloff: number; minDistance: number } {
+    return {
+      radius: this.repulsionRadius,
+      strength: this.repulsionStrength,
+      falloff: this.repulsionFalloff,
+      minDistance: this.minDistance
+    };
+  }
+
   selectNode(nodeId: string): void {
     const descriptions = MockDataService.getNodeDescriptions();
     const node = this.nodes.find(n => n.id === nodeId);
@@ -627,6 +700,9 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
     for (let i = 0; i < this.velocities.length; i++) {
       this.velocities[i].set(0, 0, 0);
     }
+    
+    // Reset space model repulsion effect
+    this.resetSpaceModelRepulsion();
     
     // Update Three.js visualization with new node structure
     this.updateThreeJSFromNodes();
@@ -687,6 +763,10 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
     // Update the nodes in the service
     this.nodeService.nodesSubject.next(updatedNodes);
     this.nodeService.centralNodeSubject.next(updatedNodes.find(n => n.isCentral) || null);
+    
+    // Update shadow for new central node
+    this.removeCentralNodeShadow();
+    this.createCentralNodeShadow();
     
     // Update central preferences to match the selected node
     this.centralPreferences.set([...selectedNode.attributes]);
@@ -1120,11 +1200,284 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
     this.resetNodes();
   }
 
+  private createCentralNodeShadow(): void {
+    if (!this.scene || this.centralNodeShadow) return;
+
+    // Create a simple 2D circle shadow
+    const circleGeometry = new THREE.CircleGeometry(8, 32); // 2D circle, larger radius
+    const circleMaterial = new THREE.MeshBasicMaterial({
+      color: 0x141933, // Dark purple color for shadow
+      transparent: true,
+      opacity: 0.7, // Good opacity for shadow effect
+      side: THREE.DoubleSide, // Visible from both sides
+      alphaTest: 0.1
+    });
+
+    this.centralNodeShadow = new THREE.Mesh(circleGeometry, circleMaterial);
+    this.centralNodeShadow.position.set(0, 0, 0);
+    (this.centralNodeShadow as any).isCentralShadow = true;
+    
+    // Make it non-interactive
+    this.centralNodeShadow.raycast = () => {};
+    
+    this.scene.add(this.centralNodeShadow);
+    console.log('Central node 2D circle shadow created');
+  }
+
+  private updateCentralNodeShadow(): void {
+    if (!this.centralNodeShadow || !this.centralSphere || !this.camera) return;
+
+    // Update shadow position to follow central node
+    this.centralNodeShadow.position.copy(this.centralSphere.position);
+    
+    // Calculate direction from central node to camera
+    const centralPosition = this.centralSphere.position;
+    const cameraPosition = this.camera.position;
+    const directionToCamera = new THREE.Vector3()
+      .subVectors(cameraPosition, centralPosition)
+      .normalize();
+    
+    // Position the 2D circle behind the central node (opposite to camera direction)
+    const shadowOffset = 2.0; // Distance behind the central node
+    const shadowPosition = centralPosition.clone()
+      .add(directionToCamera.multiplyScalar(-shadowOffset));
+    
+    this.centralNodeShadow.position.copy(shadowPosition);
+    
+    // Orient the circle to face the camera (perpendicular to camera direction)
+    this.centralNodeShadow.lookAt(cameraPosition);
+    
+    // Keep shadow clean and static - no pulsing or glowing effects
+    this.centralNodeShadow.scale.setScalar(1.0);
+  }
+
+  private removeCentralNodeShadow(): void {
+    // Remove the repelling sphere
+    if (this.centralNodeShadow && this.scene) {
+      this.scene.remove(this.centralNodeShadow);
+      
+      // Dispose of geometry and material
+      if (this.centralNodeShadow.geometry) {
+        this.centralNodeShadow.geometry.dispose();
+      }
+      if (this.centralNodeShadow.material) {
+        if (Array.isArray(this.centralNodeShadow.material)) {
+          this.centralNodeShadow.material.forEach(mat => mat.dispose());
+        } else {
+          this.centralNodeShadow.material.dispose();
+        }
+      }
+      
+      this.centralNodeShadow = undefined;
+    }
+    
+    console.log('Central node repelling sphere removed');
+  }
+
+  private resetSpaceModelPathEffect(): void {
+    // Reset all particles to their original visibility
+    for (const particleMesh of this.spaceModelParticles) {
+      const geometry = particleMesh.geometry;
+      const colorAttribute = geometry.attributes['color'];
+      
+      if (!colorAttribute) continue;
+      
+      const colors = colorAttribute.array as Float32Array;
+      const originalColors = (particleMesh as any).originalColors;
+      
+      if (originalColors) {
+        // Restore original colors
+        for (let i = 0; i < colors.length; i++) {
+          colors[i] = originalColors[i];
+        }
+        colorAttribute.needsUpdate = true;
+      }
+    }
+  }
+
+  private updateSpaceModelPathEffect(): void {
+    if (!this.centralSphere || this.spaceModelParticles.length === 0) return;
+    
+    const centralPosition = this.centralSphere.position;
+    const pathRadius = 30; // Larger radius of the invisible bubble around central node
+    
+    // Update each particle system in the space model
+    for (const particleMesh of this.spaceModelParticles) {
+      const geometry = particleMesh.geometry;
+      const positionAttribute = geometry.attributes['position'];
+      const colorAttribute = geometry.attributes['color'];
+      
+      if (!positionAttribute || !colorAttribute) continue;
+      
+      const colors = colorAttribute.array as Float32Array;
+      const originalColors = (particleMesh as any).originalColors || colors.slice(); // Store original colors
+      
+      // If original colors not stored, store them now
+      if (!(particleMesh as any).originalColors) {
+        (particleMesh as any).originalColors = colors.slice();
+      }
+      
+      // Update particle visibility based on distance from central node
+      for (let i = 0; i < positionAttribute.count; i++) {
+        const i3 = i * 3;
+        
+        // Get particle position
+        const particleX = positionAttribute.getX(i);
+        const particleY = positionAttribute.getY(i);
+        const particleZ = positionAttribute.getZ(i);
+        
+        // Calculate distance from central node
+        const distance = Math.sqrt(
+          Math.pow(particleX - centralPosition.x, 2) +
+          Math.pow(particleY - centralPosition.y, 2) +
+          Math.pow(particleZ - centralPosition.z, 2)
+        );
+        
+        // Create smooth transition effect
+        let visibility = 1.0;
+        if (distance < pathRadius) {
+          // Smooth fade out as particle gets closer to central node
+          const fadeStart = pathRadius * 0.7; // Start fading at 70% of radius
+          if (distance < fadeStart) {
+            visibility = Math.max(0.0, distance / fadeStart);
+          }
+        }
+        
+        // Apply visibility to colors (make particles invisible by reducing alpha)
+        const originalR = originalColors[i3];
+        const originalG = originalColors[i3 + 1];
+        const originalB = originalColors[i3 + 2];
+        
+        // Reduce color intensity based on visibility
+        colors[i3] = originalR * visibility;
+        colors[i3 + 1] = originalG * visibility;
+        colors[i3 + 2] = originalB * visibility;
+      }
+      
+      colorAttribute.needsUpdate = true;
+    }
+  }
+
+  private addSparklyColorsToSpaceModel(mesh: THREE.Mesh): void {
+    const geometry = mesh.geometry;
+    const positionAttribute = geometry.attributes['position'];
+    
+    if (!positionAttribute) return;
+    
+    const vertexCount = positionAttribute.count;
+    
+    // Store original positions for repulsion effect
+    const originalPositions = new Float32Array(vertexCount * 3);
+    for (let i = 0; i < vertexCount; i++) {
+      const i3 = i * 3;
+      originalPositions[i3] = positionAttribute.getX(i);
+      originalPositions[i3 + 1] = positionAttribute.getY(i);
+      originalPositions[i3 + 2] = positionAttribute.getZ(i);
+    }
+    this.spaceModelOriginalPositions.set(mesh, originalPositions);
+    
+    // Use simple, clean colors without sparkle effects
+    const colors = new Float32Array(vertexCount * 3);
+    
+    for (let i = 0; i < vertexCount; i++) {
+      const i3 = i * 3;
+      
+      // Simple, clean colors - no sparkle or twinkle
+      colors[i3] = 0.3;     // Red - muted
+      colors[i3 + 1] = 0.3; // Green - muted  
+      colors[i3 + 2] = 0.5; // Blue - slightly brighter
+    }
+    
+    // Add color attribute to geometry
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    
+    // Update material to use vertex colors
+    if (mesh.material instanceof THREE.Material) {
+      (mesh.material as any).vertexColors = true;
+      (mesh.material as any).needsUpdate = true;
+    }
+    
+    console.log(`Added clean colors to space model particle system with ${vertexCount} particles`);
+  }
+
+  private loadSpaceModel(): void {
+    if (!this.scene) return;
+
+    console.log('Loading space model...');
+    
+    this.gltfLoader.load(
+      'Models/space.glb',
+      (gltf) => {
+        console.log('Space model loaded successfully');
+        this.spaceModel = gltf.scene;
+        
+        // Scale the model to fit the scene appropriately
+        this.spaceModel.scale.setScalar(50); // Adjust scale as needed
+        
+        // Calculate the offset needed to center the dense cluster at origin
+        const box = new THREE.Box3().setFromObject(this.spaceModel);
+        const center = box.getCenter(new THREE.Vector3());
+        
+        // Position the space model so its dense cluster is at origin
+        this.spaceModel.position.set(-center.x+76, -center.y-21, -center.z+36);
+        console.log('Space model positioned to center dense cluster at origin');
+        console.log('Space model position after centering:', this.spaceModel.position);
+        console.log('Dense cluster should now be at origin (0, 0, 0)');
+        
+        // Debug: Check the central node position
+        const centralNode = this.nodes.find(node => node.isCentral);
+        if (centralNode) {
+          console.log('Central node position:', centralNode.position);
+        } else {
+          console.log('No central node found during space model loading');
+        }
+        
+        // Debug: Verify the centering worked
+        const verifyBox = new THREE.Box3().setFromObject(this.spaceModel);
+        const verifyCenter = verifyBox.getCenter(new THREE.Vector3());
+        console.log('Space model bounding box center after centering:', verifyCenter);
+        console.log('Space model bounding box size:', verifyBox.getSize(new THREE.Vector3()));
+        
+        // Make sure the model doesn't interfere with node interactions
+        this.spaceModel.traverse((child) => {
+          if (child instanceof THREE.Mesh) {
+            // Check if this is a particle system or star field
+            if (child.geometry.attributes.position && child.geometry.attributes.position.count > 100) {
+              // This looks like a particle system - add clean colors
+              this.addSparklyColorsToSpaceModel(child);
+              // Store reference for path effect
+              this.spaceModelParticles.push(child);
+            }
+            
+            child.material.transparent = true;
+            child.material.opacity = 0.3; // Lower opacity for cleaner look
+            // Disable raycasting for the space model so it doesn't interfere with node selection
+            child.raycast = () => {};
+          }
+        });
+        
+        // Add a subtle rotation to the space model for dynamic effect
+        this.spaceModel.rotation.y = Math.PI / 4; // Start with a slight rotation
+        
+        // Add to scene
+        this.scene!.add(this.spaceModel);
+        
+        console.log('Space model added to scene');
+      },
+      (progress) => {
+        console.log('Loading space model progress:', (progress.loaded / progress.total * 100) + '%');
+      },
+      (error) => {
+        console.error('Error loading space model:', error);
+      }
+    );
+  }
+
   private createParticleSystem(): void {
     if (!this.scene) return;
 
-    // Reduced particle count for better performance
-    const particleCount = 200; // Reduced from 1000 to 200
+    // Reduced particle count for cleaner effect
+    const particleCount = 200; // Reduced for cleaner look
     const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array(particleCount * 3);
     const colors = new Float32Array(particleCount * 3);
@@ -1140,33 +1493,23 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
       positions[i3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
       positions[i3 + 2] = radius * Math.cos(phi);
       
-      const distance = Math.sqrt(positions[i3] ** 2 + positions[i3 + 1] ** 2 + positions[i3 + 2] ** 2);
-      const normalizedDistance = distance / 500;
-      
-      if (normalizedDistance < 0.3) {
-        colors[i3] = 0.8;
-        colors[i3 + 1] = 0.2;
-        colors[i3 + 2] = 1.0;
-      } else if (normalizedDistance < 0.6) {
-        colors[i3] = 1.0;
-        colors[i3 + 1] = 0.2;
-        colors[i3 + 2] = 0.4;
-      } else {
-        colors[i3] = 0.0;
-        colors[i3 + 1] = 1.0;
-        colors[i3 + 2] = 1.0;
-      }
+      // Simple, clean colors without sparkle effects
+      colors[i3] = 0.4;     // Red - muted
+      colors[i3 + 1] = 0.4; // Green - muted
+      colors[i3 + 2] = 0.6; // Blue - slightly brighter
     }
 
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
     const material = new THREE.PointsMaterial({
-      size: 3, // Slightly larger to compensate for fewer particles
+      size: 1.5, // Smaller, cleaner size
       vertexColors: true,
       transparent: true,
-      opacity: 0.6, // Reduced opacity for better performance
-      blending: THREE.AdditiveBlending
+      opacity: 0.4, // Lower opacity for cleaner look
+      blending: THREE.NormalBlending, // Normal blending instead of additive
+      sizeAttenuation: true,
+      alphaTest: 0.1
     });
 
     this.particleSystem = new THREE.Points(geometry, material);
@@ -1238,6 +1581,8 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     this.animateParticles(dt);
+    this.animateSpaceModel(dt);
+    this.updateCentralNodeShadow();
     this.frameCount++;
   }
 
@@ -1353,7 +1698,13 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
           constrainedPos.normalize().multiplyScalar(centralMaxDistance);
         }
         
+        // 2D constraint for top view - restrict to XZ plane (Y = 0)
+        if (this.currentCameraView === 'top') {
+          constrainedPos.y = 0; // Lock Y position to 0 for 2D movement
+          console.log('Top view: Restricting central node to 2D movement (Y=0)');
+        } else {
         constrainedPos.y = Math.max(centralMinY, Math.min(centralMaxY, constrainedPos.y));
+        }
       }
     }
     
@@ -1535,28 +1886,243 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
   private animateParticles(dt: number): void {
     if (!this.particleSystem) return;
 
-    // OPTIMIZED: Only animate particles every few frames to reduce CPU load
-    if (this.frameCount % 3 !== 0) return; // Skip 2 out of 3 frames
-
+    // Keep particles static - no movement or twinkling effects
     const positions = this.particleSystem.geometry.attributes['position'].array as Float32Array;
-    const time = performance.now() * 0.001;
+    const colors = this.particleSystem.geometry.attributes['color'].array as Float32Array;
 
-    // OPTIMIZED: Reduce animation complexity
-    for (let i = 0; i < this.particles.length; i++) {
-      const i3 = i * 3;
-      const particle = this.particles[i];
-      
-      // Simplified animation with reduced frequency
-      particle.x += Math.sin(time * 0.5 + i * 0.02) * 0.05 * dt;
-      particle.y += Math.cos(time * 0.5 + i * 0.02) * 0.05 * dt;
-      particle.z += Math.sin(time * 0.3 + i * 0.01) * 0.03 * dt;
-      
-      positions[i3] = particle.x;
-      positions[i3 + 1] = particle.y;
-      positions[i3 + 2] = particle.z;
-    }
+    // No animation - particles remain in their original positions
+    // No twinkling - colors remain static and clean
 
     this.particleSystem.geometry.attributes['position'].needsUpdate = true;
+    this.particleSystem.geometry.attributes['color'].needsUpdate = true;
+  }
+
+
+  private animateSpaceModel(dt: number): void {
+    if (!this.spaceModel) return;
+
+    // Keep the space model's dense cluster centered at origin
+    // The position was already calculated to center the dense cluster
+    // No need to change position - just maintain the centering
+
+    // Update path effect around central node
+    this.updateSpaceModelPathEffect();
+
+    // Add twinkling animation to space model particles
+    this.spaceModel.traverse((child) => {
+      if (child instanceof THREE.Mesh && child.geometry.attributes.color) {
+        this.animateSpaceModelParticles(child, dt);
+      }
+    });
+
+    // Debug: Log positions every 60 frames (about once per second)
+    if (this.frameCount % 60 === 0) {
+      const centralNode = this.nodes.find(node => node.isCentral);
+      console.log('=== POSITION DEBUG ===');
+      console.log('Space model position:', this.spaceModel.position);
+      console.log('Central node position:', centralNode?.position);
+      console.log('Space model world position:', this.spaceModel.getWorldPosition(new THREE.Vector3()));
+      if (centralNode) {
+        const centralMesh = this.nodeSpheres.find(mesh => (mesh as any).nodeId === centralNode.id);
+        if (centralMesh) {
+          console.log('Central node mesh position:', centralMesh.position);
+        }
+      }
+    }
+
+    // Keep space model static - no rotation for cleaner look
+    // this.spaceModel.rotation.y += 0.01 * dt; // Disabled rotation
+  }
+
+  private animateSpaceModelParticles(mesh: THREE.Mesh, dt: number): void {
+    const geometry = mesh.geometry;
+    const colorAttribute = geometry.attributes['color'];
+    const positionAttribute = geometry.attributes['position'];
+    
+    if (!colorAttribute || !positionAttribute) return;
+    
+    const colors = colorAttribute.array as Float32Array;
+    const positions = positionAttribute.array as Float32Array;
+    
+    // Apply repulsion effect if central node exists
+    if (this.centralSphere) {
+      this.applyRepulsionToParticles(mesh, positions, dt);
+    }
+    
+    // No twinkling or sparkling effects - keep colors static and clean
+    // Colors remain as set in addSparklyColorsToSpaceModel
+    
+    colorAttribute.needsUpdate = true;
+    positionAttribute.needsUpdate = true;
+  }
+
+  private applyRepulsionToParticles(mesh: THREE.Mesh, positions: Float32Array, dt: number): void {
+    if (!this.centralSphere) return;
+    
+    const originalPositions = this.spaceModelOriginalPositions.get(mesh);
+    if (!originalPositions) return;
+    
+    const centralPosition = this.centralSphere.position;
+    const vertexCount = positions.length / 3;
+    
+    for (let i = 0; i < vertexCount; i++) {
+      const i3 = i * 3;
+      
+      // Get current particle position
+      const particlePos = new THREE.Vector3(
+        positions[i3],
+        positions[i3 + 1],
+        positions[i3 + 2]
+      );
+      
+      // Calculate distance from central node
+      const distance = particlePos.distanceTo(centralPosition);
+      
+      // Apply repulsion if within repulsion radius
+      if (distance < this.repulsionRadius) {
+        // Calculate repulsion force (much stronger when closer)
+        const repulsionFactor = Math.pow((this.repulsionRadius - distance) / this.repulsionRadius, this.repulsionFalloff);
+        const repulsionForce = repulsionFactor * this.repulsionStrength * dt * 6; // 6x multiplier for very strong 3D effect
+        
+        // Calculate direction away from central node
+        const direction = new THREE.Vector3()
+          .subVectors(particlePos, centralPosition)
+          .normalize();
+        
+        // Apply repulsion force
+        const repulsionOffset = direction.multiplyScalar(repulsionForce);
+        
+        // Get original position for restoration force
+        const originalPos = new THREE.Vector3(
+          originalPositions[i3],
+          originalPositions[i3 + 1],
+          originalPositions[i3 + 2]
+        );
+        
+        // Calculate restoration force to return to original position (much weaker when close to central node)
+        const restorationStrength = distance < this.repulsionRadius * 0.8 ? 0.001 : 0.02; // Much weaker restoration when close
+        const restorationForce = restorationStrength * dt;
+        const restorationDirection = new THREE.Vector3()
+          .subVectors(originalPos, particlePos)
+          .multiplyScalar(restorationForce);
+        
+        // Combine repulsion and restoration forces (heavily prioritize repulsion when close)
+        const restorationInfluence = distance < this.repulsionRadius * 0.6 ? 0.05 : 0.1; // Very little restoration influence
+        const totalOffset = repulsionOffset.add(restorationDirection.multiplyScalar(restorationInfluence));
+        
+        // Add extra push for particles very close to central node
+        if (distance < this.minDistance * 1.5) {
+          const extraPushForce = (this.minDistance * 1.5 - distance) * 0.1 * dt;
+          const extraPushDirection = new THREE.Vector3()
+            .subVectors(particlePos, centralPosition)
+            .normalize();
+          const extraPush = extraPushDirection.multiplyScalar(extraPushForce);
+          totalOffset.add(extraPush);
+        }
+        
+        // Apply the offset
+        positions[i3] += totalOffset.x;
+        positions[i3 + 1] += totalOffset.y;
+        positions[i3 + 2] += totalOffset.z;
+        
+        // Enforce minimum distance to ensure clear area around central node
+        const newParticlePos = new THREE.Vector3(
+          positions[i3],
+          positions[i3 + 1],
+          positions[i3 + 2]
+        );
+        const newDistance = newParticlePos.distanceTo(centralPosition);
+        const minDistance = this.minDistance; // Minimum distance from central node
+        
+        if (newDistance < minDistance) {
+          // Push particle to minimum distance with extra force
+          const pushDirection = new THREE.Vector3()
+            .subVectors(newParticlePos, centralPosition);
+          
+          // If particle is at the center, push in a random direction
+          if (pushDirection.length() < 0.001) {
+            pushDirection.set(
+              (Math.random() - 0.5) * 2,
+              (Math.random() - 0.5) * 2,
+              (Math.random() - 0.5) * 2
+            );
+          }
+          pushDirection.normalize();
+          
+          // Add some extra distance to ensure clear sphere
+          const extraDistance = minDistance * 1.2; // 20% extra distance for clear 3D sphere
+          const targetPos = centralPosition.clone().add(pushDirection.multiplyScalar(extraDistance));
+          positions[i3] = targetPos.x;
+          positions[i3 + 1] = targetPos.y;
+          positions[i3 + 2] = targetPos.z;
+        }
+      } else {
+        // If outside repulsion radius, check if still too close and push away
+        if (distance < this.minDistance) {
+          // Still too close, push away
+          const pushDirection = new THREE.Vector3()
+            .subVectors(particlePos, centralPosition);
+          
+          if (pushDirection.length() < 0.001) {
+            pushDirection.set(
+              (Math.random() - 0.5) * 2,
+              (Math.random() - 0.5) * 2,
+              (Math.random() - 0.5) * 2
+            );
+          }
+          pushDirection.normalize();
+          
+          // Add some extra distance to ensure clear sphere
+          const extraDistance = this.minDistance * 1.2; // 20% extra distance for clear 3D sphere
+          const targetPos = centralPosition.clone().add(pushDirection.multiplyScalar(extraDistance));
+          positions[i3] = targetPos.x;
+          positions[i3 + 1] = targetPos.y;
+          positions[i3 + 2] = targetPos.z;
+        } else {
+          // Far enough away, gently restore to original position
+          const originalPos = new THREE.Vector3(
+            originalPositions[i3],
+            originalPositions[i3 + 1],
+            originalPositions[i3 + 2]
+          );
+          
+          const currentPos = new THREE.Vector3(
+            positions[i3],
+            positions[i3 + 1],
+            positions[i3 + 2]
+          );
+          
+          const restorationForce = 0.05 * dt; // Very gentle restoration
+          const restorationDirection = new THREE.Vector3()
+            .subVectors(originalPos, currentPos)
+            .multiplyScalar(restorationForce);
+          
+          positions[i3] += restorationDirection.x;
+          positions[i3 + 1] += restorationDirection.y;
+          positions[i3 + 2] += restorationDirection.z;
+        }
+      }
+    }
+  }
+
+  private resetSpaceModelRepulsion(): void {
+    // Reset all space model particles to their original positions
+    for (const mesh of this.spaceModelParticles) {
+      const geometry = mesh.geometry;
+      const positionAttribute = geometry.attributes['position'];
+      const originalPositions = this.spaceModelOriginalPositions.get(mesh);
+      
+      if (positionAttribute && originalPositions) {
+        const positions = positionAttribute.array as Float32Array;
+        
+        // Copy original positions back
+        for (let i = 0; i < positions.length; i++) {
+          positions[i] = originalPositions[i];
+        }
+        
+        positionAttribute.needsUpdate = true;
+      }
+    }
   }
 
   private start(): void {
@@ -1611,6 +2177,8 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
         if (node) {
           // Update text label position while dragging
           this.updateNodeLabelPosition(nodeId, constrainedPos, node.radius);
+          
+          // Space model stays at origin (0, 0, 0) regardless of central node position
         }
         
         this.nodeService.updateNodePosition(nodeId, {
@@ -1623,6 +2191,11 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
         const nodeIndex = this.nodeSpheres.indexOf(this.dragged as THREE.Mesh);
         if (nodeIndex !== -1) {
           this.velocities[nodeIndex].set(0, 0, 0);
+        }
+        
+        // Update path effect if central node is being dragged
+        if (node && node.isCentral) {
+          this.updateSpaceModelPathEffect();
         }
       }
     }
@@ -1699,7 +2272,7 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
         } else {
           this.dragging = true;
           this.dragged = obj;
-          this.showDragBoundary(nodeId);
+          // Removed drag boundary - no purple sphere will be shown
         }
       } else if (e.button === 2) { // Right click - set as central node
         e.preventDefault();
@@ -1711,59 +2284,15 @@ export class SplineViewComponent implements OnInit, AfterViewInit, OnDestroy {
   private onMouseUp(): void {
     this.dragging = false;
     this.dragged = null;
-    this.hideDragBoundary();
+    // Removed hideDragBoundary call - no drag boundary to hide
+    
+    // Reset space model path effect when dragging stops
+    this.resetSpaceModelPathEffect();
+    
     // When dragging stops, nodes will automatically return to equilibrium positions
     // due to the stepPhysics method checking for distance from equilibrium
   }
 
-  private showDragBoundary(nodeId: string): void {
-    if (!this.scene) return;
-    
-    // Remove existing boundary if any
-    this.hideDragBoundary();
-    
-    // Determine boundary size based on node type
-    const node = this.nodes.find(n => n.id === nodeId);
-    const isCentral = node?.isCentral;
-    const boundaryRadius = isCentral ? 30 : 80;
-    
-    // Create wireframe sphere to show drag boundary
-    const geometry = new THREE.SphereGeometry(boundaryRadius, 24, 16);
-    const material = new THREE.MeshBasicMaterial({
-      color: isCentral ? 0x9932CC : 0x444444,
-      wireframe: true,
-      transparent: true,
-      opacity: 0.2
-    });
-    
-    this.dragBoundary = new THREE.Mesh(geometry, material);
-    this.dragBoundary.position.set(0, 0, 0);
-    (this.dragBoundary as any).isDragBoundary = true;
-    
-    this.scene.add(this.dragBoundary);
-    
-    console.log(`Showing drag boundary (radius: ${boundaryRadius}) for ${isCentral ? 'central' : 'outer'} node`);
-  }
-
-  private hideDragBoundary(): void {
-    if (this.dragBoundary && this.scene) {
-      this.scene.remove(this.dragBoundary);
-      
-      // Dispose geometry and material to prevent memory leaks
-      if (this.dragBoundary.geometry) {
-        this.dragBoundary.geometry.dispose();
-      }
-      if (this.dragBoundary.material) {
-        if (Array.isArray(this.dragBoundary.material)) {
-          this.dragBoundary.material.forEach(mat => mat.dispose());
-        } else {
-          this.dragBoundary.material.dispose();
-        }
-      }
-      
-      this.dragBoundary = undefined;
-    }
-  }
 
 
 }
